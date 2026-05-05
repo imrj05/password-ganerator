@@ -1,23 +1,25 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react'
-import { Shuffle, Lightbulb, Hash, Copy, RefreshCw, Moon, Sun, ChevronDown, Send, History, Clock, Globe, Trash2, X, Download, Lock, Github, Star, Mail, ExternalLink } from 'lucide-react'
+import { Shuffle, Lightbulb, Hash, Copy, Moon, Sun, Send, History, Clock, Globe, Trash2, X, Download, Lock, Github, Star, Mail, KeyRound, MessageSquareText, Ellipsis, CircleHelp, Plus } from 'lucide-react'
 import SecurePasswordGenerator from './securePasswordGenerator.js'
 import MemorablePasswordGenerator from './memorablePasswordGenerator.js'
 import storageManager, { STORAGE_KEYS } from './storageUtils.js'
-import { encryptForHistory } from './lib/crypto.js'
+import { decryptText, encryptForHistory } from './lib/crypto.js'
 import { Dialog, DialogContent, DialogTitle } from './components/ui/dialog'
-import {Button} from './components/ui/Button'
-import {Select} from './components/ui/Select'
-import {Switch} from './components/ui/switch'
-import {Card} from './components/ui/Card'
-import {Input} from './components/ui/Input'
+import { Button } from './components/ui/button'
+import { Select } from './components/ui/select'
+import { Switch } from './components/ui/switch'
+import { Card } from './components/ui/card'
+import { Input } from './components/ui/input'
 import PasswordTypeTabs from './components/PasswordTypeTabs'
 import PasswordControls from './components/PasswordControls'
 import GeneratedPasswordCard from './components/GeneratedPasswordCard'
 import ActionButtons from './components/ActionButtons'
 import HistoryPanel from './components/HistoryPanel'
+import VaultPanel from './components/VaultPanel'
 import { Toaster, toast } from 'sonner'
 import manifest from '../manifest.json'
 import pkg from '../package.json'
+import { enrollPlatformCredential, isAuthWindowValid, verifyPlatformCredential } from './lib/webauthn'
 
 const App = () => {
   const [password, setPassword] = useState('')
@@ -31,6 +33,8 @@ const App = () => {
   const [historyStats, setHistoryStats] = useState(null)
   const [historyEnabled, setHistoryEnabled] = useState(true)
   const [historyClearOnClose, setHistoryClearOnClose] = useState(false)
+  const [credentialsEnabled, setCredentialsEnabled] = useState(true)
+  const [vaultData, setVaultData] = useState([])
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [confirmModalMode, setConfirmModalMode] = useState('') // 'enable' | 'close'
 
@@ -70,6 +74,7 @@ const App = () => {
         setIncludeCapitalization(settings[STORAGE_KEYS.INCLUDE_CAPITALIZATION])
         setPinLength(settings[STORAGE_KEYS.PIN_LENGTH])
         setHistoryEnabled(settings[STORAGE_KEYS.HISTORY_ENABLED])
+        setCredentialsEnabled(settings[STORAGE_KEYS.CREDENTIALS_ENABLED])
         const clearOnClose = settings[STORAGE_KEYS.HISTORY_CLEAR_ON_CLOSE]
         setHistoryClearOnClose(clearOnClose)
         // If a pending clear was set from previous unload, clear history now
@@ -132,6 +137,10 @@ const App = () => {
   useEffect(() => {
     storageManager.setSetting(STORAGE_KEYS.HISTORY_ENABLED, historyEnabled)
   }, [historyEnabled])
+
+  useEffect(() => {
+    storageManager.setSetting(STORAGE_KEYS.CREDENTIALS_ENABLED, credentialsEnabled)
+  }, [credentialsEnabled])
 
   useEffect(() => {
     storageManager.setSetting(STORAGE_KEYS.HISTORY_CLEAR_ON_CLOSE, historyClearOnClose)
@@ -260,12 +269,27 @@ const App = () => {
     }
   }, [])
 
+  const loadVaultData = useCallback(async () => {
+    try {
+      const credentials = await storageManager.getSavedCredentials()
+      setVaultData(credentials)
+    } catch (error) {
+      console.error('Failed to load saved credentials:', error)
+    }
+  }, [])
+
   // Load history when component mounts or when history panel is opened
   useEffect(() => {
     if (showHistory) {
       loadHistoryData()
     }
   }, [showHistory, loadHistoryData])
+
+  useEffect(() => {
+    if (activeTab === 'vault') {
+      loadVaultData()
+    }
+  }, [activeTab, loadVaultData])
 
   // Also refresh history when switching to the History tab
   useEffect(() => {
@@ -283,6 +307,15 @@ const App = () => {
       setHistoryStats(null)
     }
   }, [historyEnabled, activeTab, loadHistoryData])
+
+  useEffect(() => {
+    if (credentialsEnabled && activeTab === 'vault') {
+      loadVaultData()
+    }
+    if (!credentialsEnabled) {
+      setVaultData([])
+    }
+  }, [credentialsEnabled, activeTab, loadVaultData])
 
   useEffect(() => {
     setShowHistory(activeTab === 'history')
@@ -307,6 +340,92 @@ const App = () => {
       console.error('Failed to remove history entry:', error)
     }
   }
+
+  const ensureVerified = useCallback(async () => {
+    try {
+      if (isAuthWindowValid()) return true
+      let ok = await verifyPlatformCredential()
+      if (ok) return true
+      await enrollPlatformCredential()
+      ok = await verifyPlatformCredential()
+      return ok
+    } catch (error) {
+      return false
+    }
+  }, [])
+
+  const copySavedCredentialField = useCallback(async (entry, field) => {
+    try {
+      const ok = await ensureVerified()
+      if (!ok) {
+        toast.error('Verification failed')
+        return
+      }
+
+      const encryptedValue = field === 'username' ? entry.usernameEnc : entry.passwordEnc
+      if (!encryptedValue) {
+        toast.error(`No ${field} available`)
+        return
+      }
+
+      const plaintext = await decryptText(encryptedValue)
+      await navigator.clipboard.writeText(plaintext)
+      toast.success(`${field === 'username' ? 'Username' : 'Password'} copied`, { duration: 1800 })
+    } catch (error) {
+      toast.error(`Unable to copy ${field}`)
+    }
+  }, [ensureVerified])
+
+  const fillSavedCredential = useCallback(async (entry) => {
+    try {
+      const ok = await ensureVerified()
+      if (!ok) {
+        toast.error('Verification failed')
+        return
+      }
+
+      const username = entry.usernameEnc ? await decryptText(entry.usernameEnc) : ''
+      const passwordValue = entry.passwordEnc ? await decryptText(entry.passwordEnc) : ''
+
+      if (!passwordValue) {
+        toast.error('Saved password is missing')
+        return
+      }
+
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        action: 'fillSavedCredential',
+        credential: {
+          id: entry.id,
+          username,
+          password: passwordValue,
+          domain: entry.domain
+        }
+      })
+
+      if (response?.success) {
+        await storageManager.touchSavedCredentialUsage(entry.id)
+        await loadVaultData()
+        toast.success('Saved login filled', { description: response.message, duration: 2400 })
+      } else {
+        toast.error('Fill failed', { description: response?.message || 'No suitable sign-in fields found', duration: 2600 })
+      }
+    } catch (error) {
+      console.error('Failed to fill saved credential:', error)
+      toast.error('Unable to fill saved login')
+    }
+  }, [ensureVerified, loadVaultData])
+
+  const removeSavedCredential = useCallback(async (entryId) => {
+    try {
+      await storageManager.removeSavedCredential(entryId)
+      await loadVaultData()
+      toast.success('Saved login removed', { duration: 1800 })
+    } catch (error) {
+      console.error('Failed to remove saved credential:', error)
+      toast.error('Unable to remove saved login')
+    }
+  }, [loadVaultData])
 
   const exportHistory = async () => {
     try {
@@ -589,72 +708,63 @@ const App = () => {
       }
     else if (activeTab === 'about') {
       return (
-        <div className="space-y-2">
-          <Card className="p-3">
-            <div className="flex gap-3 items-start">
-
-
-              <div className="flex-1">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex flex-col  items-start gap-3">
-                  <div className="flex-shrink-0">
-                <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center overflow-hidden">
-                  <img src="icons/icon128.png" alt="app icon" className="w-8 h-8 object-contain" />
+        <div className="space-y-3">
+          <Card className="border border-white/10 bg-background/70 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-primary/15 bg-primary/10 shadow-sm">
+                  <img src="icons/icon128.png" alt="app icon" className="h-9 w-9 object-contain" />
                 </div>
-                <h3 className="text-sm font-semibold mb-0">{manifest?.name || 'SecurePass Generator'}</h3>
-
+                <div className="space-y-1">
+                  <div className="text-sm font-semibold">{manifest?.name || 'SecurePass Generator'}</div>
+                  {manifest?.description && <p className="text-sm leading-relaxed text-muted-foreground">{manifest.description}</p>}
+                </div>
               </div>
 
-                    {manifest?.description && <p className="mt-1 text-sm text-primary leading-tight">{manifest.description}</p>}
-                  </div>
+              <div className="flex items-center gap-2">
+                <a href={manifest?.homepage_url || 'https://github.com/work-rjkashyap/password-ganerator'} target="_blank" rel="noopener noreferrer" className="rounded-xl border border-border/60 bg-background/65 p-2 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground">
+                  <Github size={16} />
+                </a>
+                <a href="https://chromewebstore.google.com/detail/securepass-generator/iillkojencnommaljcgiommobneopafa" target="_blank" rel="noopener noreferrer" className="rounded-xl border border-border/60 bg-background/65 p-2 text-amber-500 transition-colors hover:bg-accent/70">
+                  <Star size={16} />
+                </a>
+              </div>
+            </div>
 
-                  <div className="flex items-center gap-2">
-                    <a href={manifest?.homepage_url || 'https://github.com/work-rjkashyap/password-ganerator'} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-700 dark:text-gray-200">
-                      <Github size={16} />
-                    </a>
-                    <a href="https://chromewebstore.google.com/detail/securepass-generator/iillkojencnommaljcgiommobneopafa" target="_blank" rel="noopener noreferrer" className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-slate-800 text-yellow-500">
-                      <Star size={16} />
-                    </a>
-                  </div>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-2xl border border-border/60 bg-background/55 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary/80">Version</div>
+                <div className="mt-1 text-sm font-medium">{manifest?.version || pkg?.version}</div>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/55 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary/80">License</div>
+                <div className="mt-1 text-sm font-medium">{pkg?.license || 'MIT'}</div>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/55 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary/80">Permissions</div>
+                <div className="mt-1 text-sm font-medium">{manifest?.permissions ? manifest.permissions.join(', ') : 'storage, clipboardWrite'}</div>
+              </div>
+              <div className="rounded-2xl border border-border/60 bg-background/55 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary/80">Developer</div>
+                <div className="mt-1 text-sm font-medium">Rajeshwar Kashyap</div>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="rounded-[20px] border border-border/60 bg-background/55 p-4">
+                <div className="mb-2 flex items-center gap-2 text-primary">
+                  <Lock size={18} />
+                  <div className="text-sm font-semibold text-foreground">Security</div>
                 </div>
+                <div className="text-sm leading-relaxed text-muted-foreground">All password generation runs locally in your browser using the Web Crypto API (<code>crypto.getRandomValues()</code>) with rejection sampling to avoid statistical bias. The extension does not transmit generated passwords or form data to external servers. Preferences are stored via Chrome Storage; history entries (if enabled) are encrypted before saving.</div>
+              </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                  <div className="space-y-0.5">
-                    <div className="text-xs text-primary">Version</div>
-                    <div className="text-sm font-medium">{manifest?.version || pkg?.version}</div>
-                  </div>
-                  <div className="space-y-0.5">
-                    <div className="text-xs text-primary">License</div>
-                    <div className="text-sm font-medium">{pkg?.license || 'MIT'}</div>
-                  </div>
-
-                  <div className="space-y-0.5">
-                    <div className="text-xs text-primary">Permissions</div>
-                    <div className="text-sm font-medium">{manifest?.permissions ? manifest.permissions.join(', ') : 'storage, clipboardWrite'}</div>
-                  </div>
-                  <div className="space-y-0.5">
-                    <div className="text-xs text-primary">Developer</div>
-                    <div className="text-sm font-medium">Rajeshwar Kashyap</div>
-                  </div>
+              <div className="rounded-[20px] border border-border/60 bg-background/55 p-4">
+                <div className="mb-2 flex items-center gap-2 text-primary">
+                  <Mail size={18} />
+                  <div className="text-sm font-semibold text-foreground">Support</div>
                 </div>
-
-                <div className="mt-3 space-y-4">
-                  <div className="flex flex-col items-center text-center gap-3">
-                    <div className="text-primary"><Lock size={20} /></div>
-                    <div>
-                      <div className="text-sm font-medium">Security</div>
-                      <div className="text-sm text-primary leading-tight mt-1">All password generation runs locally in your browser using the Web Crypto API (<code>crypto.getRandomValues()</code>) with rejection sampling to avoid statistical bias. The extension does not transmit generated passwords or form data to external servers. Preferences are stored via Chrome Storage; history entries (if enabled) are encrypted before saving.</div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col items-center text-center gap-3">
-                    <div className="text-primary"><Mail size={20} /></div>
-                    <div>
-                      <div className="text-sm font-medium">Support</div>
-                      <div className="text-sm text-primary leading-tight mt-1">For bugs or feature requests, open an issue on the <a className="text-primary underline" href="https://github.com/work-rjkashyap/password-ganerator" target="_blank" rel="noopener noreferrer">GitHub repository</a>. For direct support, email <code>rajeshwarkashyap5@gmail.com</code> — include the extension version and reproduction steps to help us diagnose faster.</div>
-                    </div>
-                  </div>
-                </div>
+                <div className="text-sm leading-relaxed text-muted-foreground">For bugs or feature requests, open an issue on the <a className="text-primary underline" href="https://github.com/work-rjkashyap/password-ganerator" target="_blank" rel="noopener noreferrer">GitHub repository</a>. For direct support, email <code>rajeshwarkashyap5@gmail.com</code> and include the extension version plus reproduction steps.</div>
               </div>
             </div>
           </Card>
@@ -684,6 +794,8 @@ const App = () => {
       default: return <Copy size={14} />
     }
   }
+
+  const primarySection = ['random', 'memorable', 'pin'].includes(activeTab) ? 'generator' : activeTab
 
   const renderHistoryPanel = () => {
     if (!showHistory) return null
@@ -841,130 +953,123 @@ const App = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground max-w-sm mx-auto p-4">
+    <div className="mx-auto flex min-h-screen w-full max-w-sm flex-col bg-background text-foreground">
       <Toaster position="top-center" richColors closeButton duration={2500} />
-      <div className="space-y-4 min-w-[350px]">
-        <div className="sticky top-0 z-30 flex w-full flex-col gap-3 border-b border-border bg-background/95 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="text-sm font-semibold">Choose password type</div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                className="p-2 rounded hover:bg-gray-100 dark:hover:bg-slate-800 transform transition-transform duration-150 ease-in-out hover:scale-110 text-emerald-600 dark:text-emerald-400"
-                onClick={() => {
-                  setShowHistory(true)
-                  setActiveTab('history')
-                }}
-                title="View password history"
-              >
-                <History size={16} />
-              </button>
-              {/* Theme toggle uses shadcn theme provider */}
-              <button className={`p-2 rounded hover:bg-gray-100 dark:hover:bg-slate-800 transform transition-transform duration-150 ease-in-out hover:scale-105 ${isDarkMode ? 'text-yellow-400' : 'text-slate-600'}`} title="Toggle theme" onClick={() => {
-                const current = document.documentElement.classList.contains('dark') ? 'dark' : (document.documentElement.classList.contains('light') ? 'light' : 'system')
-                const next = current === 'dark' ? 'light' : 'dark'
-                try { localStorage.setItem('vite-ui-theme', next) } catch(e) {}
-                document.documentElement.classList.remove('light','dark')
-                document.documentElement.classList.add(next)
-                setIsDarkMode(next === 'dark')
-              }}>
-                {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
-              </button>
-              {/* GitHub repo link */}
-              <a
-                className="p-2 rounded hover:bg-gray-100 dark:hover:bg-slate-800 transform transition duration-150 ease-in-out hover:scale-105 text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white"
-                href="https://github.com/work-rjkashyap/password-ganerator"
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Open GitHub repository"
-              >
-                <Github size={16} />
-              </a>
-              {/* Rate us on Chrome Web Store */}
-              <a
-                className="p-2 rounded hover:bg-gray-100 dark:hover:bg-slate-800 transform transition-transform duration-150 ease-in-out hover:scale-110 text-yellow-500 dark:text-yellow-400"
-                href="https://chromewebstore.google.com/detail/securepass-generator/iillkojencnommaljcgiommobneopafa"
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Rate us on Chrome Web Store"
-              >
-                <Star size={16} />
-              </a>
-            </div>
-          </div>
-
-          <PasswordTypeTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+      <div className="border-b border-border/80 bg-card px-4 py-3">
+        <div className="grid grid-cols-4 gap-1.5 text-center text-[12px] text-muted-foreground">
+          <button className={`flex flex-col items-center gap-2 px-2 py-2.5 ${primarySection === 'vault' ? 'rounded-sm border border-border/80 bg-background/40 text-foreground' : ''}`} onClick={() => setActiveTab('vault')}>
+            <KeyRound size={22} />
+            <span>Vault</span>
+          </button>
+          <button className={`flex flex-col items-center gap-2 px-2 py-2.5 ${primarySection === 'history' ? 'rounded-sm border border-border/80 bg-background/40 text-foreground' : ''}`} onClick={() => { setShowHistory(true); setActiveTab('history') }}>
+            <History size={22} />
+            <span>History</span>
+          </button>
+          <button className={`flex flex-col items-center gap-2 px-2 py-2.5 ${primarySection === 'generator' ? 'rounded-sm border border-border/80 bg-background/40 text-foreground' : ''}`} onClick={() => setActiveTab('random')}>
+            <MessageSquareText size={22} />
+            <span>Generator</span>
+          </button>
+          <button className={`flex flex-col items-center gap-2 px-2 py-2.5 ${primarySection === 'about' ? 'rounded-sm border border-border/80 bg-background/40 text-foreground' : ''}`} onClick={() => setActiveTab('about')}>
+            <Ellipsis size={22} />
+            <span>More</span>
+          </button>
         </div>
+      </div>
 
-        {activeTab === 'history' ? (
-          <>
-            <HistoryPanel
-              showHistory={true}
-              setShowHistory={setShowHistory}
-              historyData={historyData}
-              historyStats={historyStats}
-              historyEnabled={historyEnabled}
-              setHistoryEnabled={setHistoryEnabled}
-              historyClearOnClose={historyClearOnClose}
-              setConfirmModalMode={setConfirmModalMode}
-              setShowConfirmModal={setShowConfirmModal}
-              exportHistory={exportHistory}
-              clearHistory={clearHistory}
-              removeHistoryEntry={removeHistoryEntry}
-              formatTimestamp={formatTimestamp}
-              getPasswordTypeIcon={getPasswordTypeIcon}
-              showConfirmModal={showConfirmModal}
-              setShowConfirmModalLocal={setShowConfirmModal}
-              confirmModalMode={confirmModalMode}
-              onConfirmClearOnClose={async (enable) => {
-                setHistoryClearOnClose(enable)
-                try {
-                  await storageManager.setSetting(STORAGE_KEYS.HISTORY_CLEAR_ON_CLOSE, enable)
-                  const id = 'toast-clear-on-close'
-                  // show a confirmation toast
-                  toast.success(enable ? 'Enabled: clear on close' : 'Disabled: clear on close', { id, duration: 2000 })
-                } catch(e) {}
-              }}
-            />
-          </>
-        ) : activeTab === 'about' ? (
-          <div className="space-y-4">
-            {renderTabContent()}
-          </div>
+      <div className="flex-1 space-y-4 px-3 py-4">
+        {primarySection === 'history' ? (
+          <HistoryPanel
+            showHistory={true}
+            setShowHistory={setShowHistory}
+            historyData={historyData}
+            historyStats={historyStats}
+            historyEnabled={historyEnabled}
+            setHistoryEnabled={setHistoryEnabled}
+            historyClearOnClose={historyClearOnClose}
+            setConfirmModalMode={setConfirmModalMode}
+            setShowConfirmModal={setShowConfirmModal}
+            exportHistory={exportHistory}
+            clearHistory={clearHistory}
+            removeHistoryEntry={removeHistoryEntry}
+            formatTimestamp={formatTimestamp}
+            getPasswordTypeIcon={getPasswordTypeIcon}
+            showConfirmModal={showConfirmModal}
+            setShowConfirmModalLocal={setShowConfirmModal}
+            confirmModalMode={confirmModalMode}
+            onConfirmClearOnClose={async (enable) => {
+              setHistoryClearOnClose(enable)
+              try {
+                await storageManager.setSetting(STORAGE_KEYS.HISTORY_CLEAR_ON_CLOSE, enable)
+                toast.success(enable ? 'Enabled: clear on close' : 'Disabled: clear on close', { duration: 2000 })
+              } catch (e) {}
+            }}
+          />
+        ) : primarySection === 'vault' ? (
+          <VaultPanel
+            credentialsEnabled={credentialsEnabled}
+            setCredentialsEnabled={setCredentialsEnabled}
+            credentialsData={vaultData}
+            onCopyField={copySavedCredentialField}
+            onFillCredential={fillSavedCredential}
+            onRemoveCredential={removeSavedCredential}
+            formatTimestamp={formatTimestamp}
+          />
+        ) : primarySection === 'about' ? (
+          <div className="space-y-4">{renderTabContent()}</div>
         ) : (
-        <div className="space-y-4">
-          <h2 className="text-sm font-medium">Customize your new password</h2>
-          <div className="space-y-4">
-            <div className="space-y-4">
-              <PasswordControls
-                activeTab={activeTab}
-                length={length} setLength={setLength}
-                includeNumbers={includeNumbers} setIncludeNumbers={setIncludeNumbers}
-                includeSymbols={includeSymbols} setIncludeSymbols={setIncludeSymbols}
-                symbolSet={symbolSet} setSymbolSet={setSymbolSet}
-                customSymbols={customSymbols} setCustomSymbols={setCustomSymbols}
-                symbolSets={symbolSets}
-                wordCount={wordCount} setWordCount={setWordCount}
-                includeCapitalization={includeCapitalization} setIncludeCapitalization={setIncludeCapitalization}
-                pinLength={pinLength} setPinLength={setPinLength}
-              />
-              <Card>
-                <div className="p-3 space-y-3">
-                  <GeneratedPasswordCard password={password} onCopy={copyToClipboard} />
-                  <ActionButtons onCopy={copyToClipboard} onAutofill={autoFillPassword} onRefresh={generatePassword} disabled={!password} />
-                </div>
-              </Card>
-            </div>
+          <>
+            <Card className="border border-border/80 bg-card px-4 py-4 shadow-none">
+              <div className="space-y-4">
+                <GeneratedPasswordCard password={password} />
+                <ActionButtons onCopy={copyToClipboard} onAutofill={autoFillPassword} onRefresh={generatePassword} disabled={!password} />
+              </div>
+            </Card>
 
-            {copied && <div className="text-sm text-green-600">Password copied to clipboard!</div>}
-            {autoFilled && <div className="text-sm text-green-600">{autoFillMessage}</div>}
-            {!autoFilled && autoFillMessage && <div className="text-sm text-red-600">{autoFillMessage}</div>}
-          </div>
-        </div>
+            <PasswordControls
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              length={length} setLength={setLength}
+              includeNumbers={includeNumbers} setIncludeNumbers={setIncludeNumbers}
+              includeSymbols={includeSymbols} setIncludeSymbols={setIncludeSymbols}
+              symbolSet={symbolSet} setSymbolSet={setSymbolSet}
+              customSymbols={customSymbols} setCustomSymbols={setCustomSymbols}
+              symbolSets={symbolSets}
+              wordCount={wordCount} setWordCount={setWordCount}
+              includeCapitalization={includeCapitalization} setIncludeCapitalization={setIncludeCapitalization}
+              pinLength={pinLength} setPinLength={setPinLength}
+            />
 
+            {copied && <div className="rounded-sm border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">Password copied to clipboard.</div>}
+            {autoFilled && <div className="rounded-sm border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">{autoFillMessage}</div>}
+            {!autoFilled && autoFillMessage && <div className="rounded-sm border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{autoFillMessage}</div>}
+          </>
         )}
+      </div>
+
+      <div className="mt-auto flex items-center justify-between border-t border-border/80 bg-card px-4 py-3 text-muted-foreground">
+        <a
+          className="flex items-center gap-2 text-sm text-foreground"
+          href="https://github.com/work-rjkashyap/password-ganerator"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <img src="icons/icon128.png" alt="SecurePass" className="h-5 w-5 object-contain opacity-80" />
+          <span>Open the web app</span>
+        </a>
+
+        <div className="flex items-center gap-4">
+          <button className="text-muted-foreground hover:text-foreground" title="Generate" onClick={generatePassword}><Plus size={20} /></button>
+          <button className="text-muted-foreground hover:text-foreground" title="Help" onClick={() => setActiveTab('about')}><CircleHelp size={20} /></button>
+          <button className="text-muted-foreground hover:text-foreground" title="Theme" onClick={() => {
+            const current = document.documentElement.classList.contains('dark') ? 'dark' : (document.documentElement.classList.contains('light') ? 'light' : 'system')
+            const next = current === 'dark' ? 'light' : 'dark'
+            try { localStorage.setItem('vite-ui-theme', next) } catch (e) {}
+            document.documentElement.classList.remove('light', 'dark')
+            document.documentElement.classList.add(next)
+            setIsDarkMode(next === 'dark')
+          }}>{isDarkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
+        </div>
       </div>
     </div>
   )

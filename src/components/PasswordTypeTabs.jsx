@@ -1,49 +1,34 @@
 import React from 'react'
-import { Shuffle, Lightbulb, Hash, Info } from 'lucide-react'
+import { Shuffle, Lightbulb, Hash } from 'lucide-react'
 import { Button } from './ui/button'
+
+const tabs = [
+  { id: 'random', label: 'Password', icon: Shuffle },
+  { id: 'memorable', label: 'Passphrase', icon: Lightbulb },
+  { id: 'pin', label: 'PIN', icon: Hash }
+]
 
 const PasswordTypeTabs = ({ activeTab, setActiveTab }) => {
   return (
-    <div className="flex w-full min-w-[350px]">
-      <div className="flex-1 overflow-x-auto whitespace-nowrap no-scrollbar">
-        <div className="inline-flex gap-1.5 min-w-full bg-muted/40 rounded-lg p-1">
-          <Button
-          variant={activeTab === 'random' ? 'default' : 'ghost'}
-          className={`justify-start shrink-0 rounded-md px-3 py-1.5 text-sm transition-shadow ${activeTab === 'random' ? 'bg-primary text-primary-foreground shadow-sm' : 'hover:bg-muted'}`}
-          onClick={() => setActiveTab('random')}
-        >
-          <Shuffle className="inline-block mr-2 -ml-0.5" size={14} />
-          Random
-          </Button>
+    <div className="space-y-2">
+      {tabs.map(({ id, label, icon: Icon }) => {
+        const isActive = activeTab === id
 
+        return (
           <Button
-          variant={activeTab === 'memorable' ? 'default' : 'ghost'}
-          className={`justify-start shrink-0 rounded-md px-3 py-1.5 text-sm transition-shadow ${activeTab === 'memorable' ? 'bg-primary text-primary-foreground shadow-sm' : 'hover:bg-muted'}`}
-          onClick={() => setActiveTab('memorable')}
-        >
-          <Lightbulb className="inline-block mr-2 -ml-0.5" size={14} />
-          Memorable
+            key={id}
+            variant="ghost"
+            onClick={() => setActiveTab(id)}
+            className={`h-auto w-full justify-start gap-3 border border-transparent px-0 py-0 text-left ${isActive ? 'bg-transparent hover:bg-transparent' : 'bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground'}`}
+          >
+            <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${isActive ? 'border-primary/80 bg-primary/10 text-primary' : 'border-border bg-transparent text-transparent'}`}>
+              <span className={`h-2 w-2 rounded-full ${isActive ? 'bg-primary' : 'bg-transparent'}`} />
+            </span>
+            <Icon size={16} className={isActive ? 'text-primary' : 'text-muted-foreground'} />
+            <span className={`text-[15px] ${isActive ? 'font-medium text-foreground' : 'font-normal text-muted-foreground'}`}>{label}</span>
           </Button>
-
-          <Button
-          variant={activeTab === 'pin' ? 'default' : 'ghost'}
-          className={`justify-start shrink-0 rounded-md px-3 py-1.5 text-sm transition-shadow ${activeTab === 'pin' ? 'bg-primary text-primary-foreground shadow-sm' : 'hover:bg-muted'}`}
-          onClick={() => setActiveTab('pin')}
-        >
-          <Hash className="inline-block mr-2 -ml-0.5" size={14} />
-          PIN
-          </Button>
-
-          <Button
-          variant={activeTab === 'about' ? 'default' : 'ghost'}
-          className={`justify-start shrink-0 rounded-md px-3 py-1.5 text-sm transition-shadow ${activeTab === 'about' ? 'bg-primary text-primary-foreground shadow-sm' : 'hover:bg-muted'}`}
-          onClick={() => setActiveTab('about')}
-        >
-          <Info className={`inline-block mr-2 -ml-0.5 transform transition-transform duration-150 ${activeTab === 'about' ? 'text-cyan-500 scale-110' : 'text-gray-500 hover:scale-105'}`} size={14} />
-          About
-          </Button>
-        </div>
-      </div>
+        )
+      })}
     </div>
   )
 }

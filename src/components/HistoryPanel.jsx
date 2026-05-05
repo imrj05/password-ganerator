@@ -99,16 +99,19 @@ const HistoryPanel = ({
   return (
     <TooltipProvider>
       <>
-        <div className="w-full p-2 space-y-3">
-        <Card className="sticky border  top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b shadow-sm px-3 py-2.5 flex flex-col gap-2">
+        <div className="w-full space-y-3">
+        <Card className="sticky top-0 z-10 border border-white/10 bg-background/75 px-4 py-3 shadow-md backdrop-blur-xl supports-[backdrop-filter]:bg-background/65">
           <div className="flex items-center gap-2">
-            <History size={16} />
-            <span className="text-sm font-medium">Password History</span>
+            <div className="rounded-sm bg-primary/12 p-2 text-primary"><History size={15} /></div>
+            <div>
+              <div className="text-sm font-semibold">Password History</div>
+              <div className="text-xs text-muted-foreground">Encrypted activity snapshots for copy and autofill.</div>
+            </div>
           </div>
           <TooltipProvider>
             <div className="flex flex-wrap items-center gap-2 justify-between md:justify-end">
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/60 px-3 py-1.5">
                 <span className="text-xs text-muted-foreground">History</span>
                 <Switch
                   id="history-enabled"
@@ -122,7 +125,7 @@ const HistoryPanel = ({
                 />
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/60 px-3 py-1.5">
                 <span className="text-xs text-muted-foreground">Clear on close</span>
                 <Switch
                   id="history-clear-on-close"
@@ -149,7 +152,7 @@ const HistoryPanel = ({
         </Card>
 
         {historyStats && (
-          <Card className="p-3 bg-muted/20">
+          <Card className="border border-white/10 bg-background/60 p-3 shadow-none">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <div className="flex items-center gap-2">
                 <span>Total</span>
@@ -173,7 +176,7 @@ const HistoryPanel = ({
 
         <div className="space-y-2">
           {historyData.length === 0 ? (
-            <Card className="p-6 text-center bg-muted/20">
+            <Card className="border border-dashed border-border/70 bg-background/55 p-6 text-center shadow-none">
               <div className="flex flex-col items-center gap-2 text-muted-foreground">
                 <History size={28} />
                 <div className="text-sm">No password history yet</div>
@@ -182,8 +185,9 @@ const HistoryPanel = ({
             </Card>
           ) : (
             historyData.map((entry) => (
-              <Card key={entry.id} className="p-3 flex items-start gap-3">
-                <div className="mt-0.5 text-muted-foreground">
+              <Card key={entry.id} className="border border-white/10 bg-background/60 p-3.5 shadow-none transition-colors hover:bg-background/72">
+                <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-sm bg-muted/70 p-2 text-muted-foreground">
                   {getPasswordTypeIcon(entry.passwordType)}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -211,7 +215,7 @@ const HistoryPanel = ({
                   </div>
                   {entry.passwordEnc ? (
                     <div className="mt-2 flex items-center justify-between gap-2">
-                      <div className="text-sm font-mono truncate">
+                      <div className="rounded-sm border border-border/60 bg-background/65 px-3 py-2 text-sm font-mono truncate">
                         {revealed[entry.id] ? revealed[entry.id] : '••••••••••••'}
                       </div>
                       <div className="flex items-center gap-1.5">
@@ -239,6 +243,7 @@ const HistoryPanel = ({
                   <Button variant="ghost" size="icon" onClick={() => removeHistoryEntry(entry.id)} title="Remove this entry">
                     <X size={14} />
                   </Button>
+                </div>
                 </div>
               </Card>
             ))

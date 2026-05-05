@@ -2,6 +2,45 @@
  * Chrome Storage utilities for password generator settings
  */
 
+import { decryptText } from './lib/crypto.js'
+
+function normalizeDomain(value = '') {
+  if (!value) return ''
+
+  try {
+    return new URL(value).hostname.toLowerCase()
+  } catch (error) {
+    return String(value).trim().toLowerCase()
+  }
+}
+
+function normalizeOrigin(value = '') {
+  if (!value) return ''
+
+  try {
+    return new URL(value).origin.toLowerCase()
+  } catch (error) {
+    return ''
+  }
+}
+
+function maskUsername(username = '') {
+  const value = String(username).trim()
+  if (!value) return 'Unknown account'
+
+  const [localPart, domainPart] = value.split('@')
+  if (domainPart) {
+    const visible = localPart.slice(0, 2)
+    return `${visible}${localPart.length > 2 ? '***' : '*'}@${domainPart}`
+  }
+
+  if (value.length <= 3) {
+    return `${value[0] || ''}**`
+  }
+
+  return `${value.slice(0, 2)}***${value.slice(-1)}`
+}
+
 const STORAGE_KEYS = {
   THEME: 'theme',
   ACTIVE_TAB: 'activeTab',
@@ -15,8 +54,11 @@ const STORAGE_KEYS = {
   PIN_LENGTH: 'pinLength',
   PASSWORD_HISTORY: 'passwordHistory',
   HISTORY_ENABLED: 'historyEnabled',
-  HISTORY_CLEAR_ON_CLOSE: 'historyClearOnClose'
-  ,HISTORY_PENDING_CLEAR: 'historyPendingClear'
+  HISTORY_CLEAR_ON_CLOSE: 'historyClearOnClose',
+  HISTORY_PENDING_CLEAR: 'historyPendingClear',
+  SAVED_CREDENTIALS: 'savedCredentials',
+  CREDENTIALS_ENABLED: 'credentialsEnabled',
+  CREDENTIAL_NEVER_SAVE_DOMAINS: 'credentialNeverSaveDomains'
 }
 
 const DEFAULT_SETTINGS = {
@@ -32,8 +74,11 @@ const DEFAULT_SETTINGS = {
   [STORAGE_KEYS.PIN_LENGTH]: 4,
   [STORAGE_KEYS.PASSWORD_HISTORY]: [],
   [STORAGE_KEYS.HISTORY_ENABLED]: true,
-  [STORAGE_KEYS.HISTORY_CLEAR_ON_CLOSE]: false
-  ,[STORAGE_KEYS.HISTORY_PENDING_CLEAR]: false
+  [STORAGE_KEYS.HISTORY_CLEAR_ON_CLOSE]: false,
+  [STORAGE_KEYS.HISTORY_PENDING_CLEAR]: false,
+  [STORAGE_KEYS.SAVED_CREDENTIALS]: [],
+  [STORAGE_KEYS.CREDENTIALS_ENABLED]: true,
+  [STORAGE_KEYS.CREDENTIAL_NEVER_SAVE_DOMAINS]: []
 }
 
 class StorageManager {
@@ -350,6 +395,148 @@ class StorageManager {
     } catch (error) {
       console.error('Error getting password history stats:', error)
       return { total: 0, copyCount: 0, autofillCount: 0, topWebsites: {}, passwordTypes: { random: 0, memorable: 0, pin: 0 }, lastSevenDays: 0 }
+    }
+  }
+
+  async getSavedCredentials(domain = '') {
+    try {
+      const normalizedDomain = normalizeDomain(domain)
+      const credentials = await this.getSetting(STORAGE_KEYS.SAVED_CREDENTIALS)
+      const allCredentials = Array.isArray(credentials) ? credentials : []
+      const filteredCredentials = normalizedDomain
+        ? allCredentials.filter(entry => entry.domain === normalizedDomain)
+        : allCredentials
+
+      return filteredCredentials.sort((a, b) => {
+        const left = new Date(b.lastUsedAt || b.updatedAt || b.createdAt || 0).getTime()
+        const right = new Date(a.lastUsedAt || a.updatedAt || a.createdAt || 0).getTime()
+        return left - right
+      })
+    } catch (error) {
+      console.error('Error getting saved credentials:', error)
+      return []
+    }
+  }
+
+  async saveCredential({ origin = '', domain = '', username = '', usernameEnc = null, passwordEnc = null, label = '' }) {
+    try {
+      const normalizedDomain = normalizeDomain(domain || origin)
+      const normalizedOrigin = normalizeOrigin(origin)
+      const trimmedUsername = String(username || '').trim()
+
+      if (!normalizedDomain || !trimmedUsername || !usernameEnc || !passwordEnc) {
+        return null
+      }
+
+      const currentCredentials = await this.getSavedCredentials()
+      let existingCredential = null
+
+      for (const entry of currentCredentials) {
+        if (entry.domain !== normalizedDomain || !entry.usernameEnc) continue
+
+        try {
+          const savedUsername = await decryptText(entry.usernameEnc)
+          if (savedUsername === trimmedUsername) {
+            existingCredential = entry
+            break
+          }
+        } catch (error) {
+          // Ignore corrupt entries and continue matching others.
+        }
+      }
+
+      const now = new Date().toISOString()
+      const nextCredential = existingCredential
+        ? {
+            ...existingCredential,
+            origin: normalizedOrigin || existingCredential.origin || '',
+            usernamePreview: maskUsername(trimmedUsername),
+            usernameEnc,
+            passwordEnc,
+            label: label || existingCredential.label || '',
+            updatedAt: now
+          }
+        : {
+            id: Date.now() + Math.random(),
+            origin: normalizedOrigin,
+            domain: normalizedDomain,
+            usernamePreview: maskUsername(trimmedUsername),
+            usernameEnc,
+            passwordEnc,
+            label,
+            createdAt: now,
+            updatedAt: now,
+            lastUsedAt: null
+          }
+
+      const updatedCredentials = existingCredential
+        ? currentCredentials.map(entry => (entry.id === existingCredential.id ? nextCredential : entry))
+        : [nextCredential, ...currentCredentials]
+
+      await this.setSetting(STORAGE_KEYS.SAVED_CREDENTIALS, updatedCredentials)
+      return nextCredential
+    } catch (error) {
+      console.error('Error saving credential:', error)
+      return null
+    }
+  }
+
+  async removeSavedCredential(entryId) {
+    try {
+      const currentCredentials = await this.getSetting(STORAGE_KEYS.SAVED_CREDENTIALS)
+      const updatedCredentials = (Array.isArray(currentCredentials) ? currentCredentials : []).filter(entry => entry.id !== entryId)
+      await this.setSetting(STORAGE_KEYS.SAVED_CREDENTIALS, updatedCredentials)
+    } catch (error) {
+      console.error('Error removing saved credential:', error)
+    }
+  }
+
+  async touchSavedCredentialUsage(entryId) {
+    try {
+      const currentCredentials = await this.getSetting(STORAGE_KEYS.SAVED_CREDENTIALS)
+      const now = new Date().toISOString()
+      const updatedCredentials = (Array.isArray(currentCredentials) ? currentCredentials : []).map(entry => (
+        entry.id === entryId
+          ? { ...entry, lastUsedAt: now, updatedAt: now }
+          : entry
+      ))
+      await this.setSetting(STORAGE_KEYS.SAVED_CREDENTIALS, updatedCredentials)
+    } catch (error) {
+      console.error('Error updating saved credential usage:', error)
+    }
+  }
+
+  async getNeverSaveDomains() {
+    try {
+      const domains = await this.getSetting(STORAGE_KEYS.CREDENTIAL_NEVER_SAVE_DOMAINS)
+      return Array.isArray(domains) ? domains : []
+    } catch (error) {
+      console.error('Error getting never-save domains:', error)
+      return []
+    }
+  }
+
+  async isNeverSaveDomain(domain) {
+    const normalizedDomain = normalizeDomain(domain)
+    if (!normalizedDomain) return false
+
+    const domains = await this.getNeverSaveDomains()
+    return domains.includes(normalizedDomain)
+  }
+
+  async setNeverSaveDomain(domain, shouldNeverSave = true) {
+    try {
+      const normalizedDomain = normalizeDomain(domain)
+      if (!normalizedDomain) return
+
+      const currentDomains = await this.getNeverSaveDomains()
+      const nextDomains = shouldNeverSave
+        ? Array.from(new Set([...currentDomains, normalizedDomain]))
+        : currentDomains.filter(entry => entry !== normalizedDomain)
+
+      await this.setSetting(STORAGE_KEYS.CREDENTIAL_NEVER_SAVE_DOMAINS, nextDomains)
+    } catch (error) {
+      console.error('Error updating never-save domains:', error)
     }
   }
 }

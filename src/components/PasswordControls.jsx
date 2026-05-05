@@ -1,14 +1,76 @@
 import React, { useState } from 'react'
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem }   from './ui/select'
 import { Combobox } from './ui/Combobox'
 import { Switch } from './ui/switch'
 import { Input } from './ui/input'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Slider } from './ui/slider'
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './ui/tooltip'
+import PasswordTypeTabs from './PasswordTypeTabs'
+
+const SliderField = ({
+  label,
+  min,
+  max,
+  value,
+  onChange,
+  dragging,
+  setDragging,
+  ariaLabel
+}) => (
+  <div className="space-y-4">
+    <div className="flex items-baseline justify-between gap-3">
+      <label className="text-sm font-medium text-foreground">{label} <span className="text-muted-foreground">({min}-{max})</span></label>
+      <span className="text-sm text-foreground">{value}</span>
+    </div>
+    <div
+      className="relative"
+      onMouseDown={() => setDragging(true)}
+      onMouseUp={() => setDragging(false)}
+      onMouseLeave={() => setDragging(false)}
+      onTouchStart={() => setDragging(true)}
+      onTouchEnd={() => setDragging(false)}
+    >
+      <Slider
+        value={[value]}
+        min={min}
+        max={max}
+        onValueChange={(val) => onChange(val[0])}
+        aria-label={ariaLabel}
+      />
+      <div
+        className="absolute -top-8 translate-x-[-50%] rounded-sm border border-border/60 bg-popover px-2 py-0.5 text-[10px] text-popover-foreground shadow-sm transition-all duration-150 ease-out"
+        style={{ left: `${Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100))}%` }}
+        data-active={dragging ? 'true' : 'false'}
+      >
+        {value}
+      </div>
+    </div>
+  </div>
+)
+
+const ToggleField = ({ id, label, checked, onCheckedChange }) => (
+  <div className="rounded-sm border border-border/80 bg-background/25 px-3 py-2.5">
+    <div className="flex items-center justify-between gap-2">
+      <label htmlFor={id} className="text-sm font-medium text-foreground">{label}</label>
+      <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
+    </div>
+  </div>
+)
+
+const ControlsShell = ({ activeTab, setActiveTab, children }) => (
+  <Card className="border border-border/80 bg-card/80 px-0 py-0 shadow-none">
+    <CardHeader className="px-5 pb-3 pt-5">
+      <CardTitle className="text-base font-medium">Type</CardTitle>
+    </CardHeader>
+    <CardContent className="space-y-5 px-5 pb-5 pt-0">
+      <PasswordTypeTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+      {children}
+    </CardContent>
+  </Card>
+)
 
 const PasswordControls = ({
   activeTab,
+  setActiveTab,
   length, setLength,
   includeNumbers, setIncludeNumbers,
   includeSymbols, setIncludeSymbols,
@@ -22,83 +84,50 @@ const PasswordControls = ({
   const [draggingLen, setDraggingLen] = useState(false)
   const [draggingWords, setDraggingWords] = useState(false)
   const [draggingPin, setDraggingPin] = useState(false)
+
   if (activeTab === 'random') {
     return (
-      <Card>
-        <CardHeader className="px-3 pt-2 pb-1">
-          <CardTitle className="text-sm">Random Password Options</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-1.5 px-5 pb-3">
-        <div className="space-y-1.5">
-          <label className="text-sm text-foreground">Characters</label>
-          <div className="flex items-center gap-2">
-            <span className="w-4 text-xs text-muted-foreground">4</span>
-            <div className="relative flex-1 group"
-              onMouseDown={() => setDraggingLen(true)}
-              onMouseUp={() => setDraggingLen(false)}
-              onMouseLeave={() => setDraggingLen(false)}
-              onTouchStart={() => setDraggingLen(true)}
-              onTouchEnd={() => setDraggingLen(false)}
-            >
-              <Slider
-                value={[length]}
-                min={4}
-                max={50}
-                onValueChange={(val) => setLength(val[0])}
-                aria-label="Characters"
-              />
-              <div
-                className="absolute -top-7 translate-x-[-50%] text-[10px] px-1.5 py-0.5 rounded bg-popover text-popover-foreground border shadow transition-all duration-150 ease-out"
-                style={{ left: `${Math.min(100, Math.max(0, ((length - 4) / (50 - 4)) * 100))}%` }}
-                data-active={draggingLen ? 'true' : 'false'}
-              >
-                {length}
-              </div>
-            </div>
-            <span className="w-6 text-xs text-muted-foreground text-right">50</span>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="text-xs text-muted-foreground w-10 text-right cursor-default">{length}</div>
-                </TooltipTrigger>
-                <TooltipContent>Characters: {length}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
+      <ControlsShell activeTab={activeTab} setActiveTab={setActiveTab}>
+        <div className="border-t border-border/80 pt-5">
+          <SliderField
+            label="Length"
+            min={4}
+            max={50}
+            value={length}
+            onChange={setLength}
+            dragging={draggingLen}
+            setDragging={setDraggingLen}
+            ariaLabel="Characters"
+          />
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 justify-between">
-          <div className="flex items-center gap-2">
-            <Switch id="includeNumbers" checked={includeNumbers} onCheckedChange={setIncludeNumbers} />
-            <label htmlFor="includeNumbers" className="text-sm text-foreground">Numbers</label>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Switch id="includeSymbols" checked={includeSymbols} onCheckedChange={setIncludeSymbols} />
-            <label htmlFor="includeSymbols" className="text-sm text-foreground">Symbols</label>
-          </div>
+        <div className="space-y-3 border-t border-border/80 pt-5">
+          <ToggleField id="includeNumbers" label="Numbers" checked={includeNumbers} onCheckedChange={setIncludeNumbers} />
+          <ToggleField id="includeSymbols" label="Symbols" checked={includeSymbols} onCheckedChange={setIncludeSymbols} />
         </div>
 
         {includeSymbols && (
-          <Card className="symbol-options border-none bg-muted/10 shadow-none">
-
-            <CardContent className="px-0 space-y-2.5 pt-1.5 pb-3">
-              <Combobox
-                value={symbolSet}
-                onChange={(v) => setSymbolSet(v)}
-                placeholder="Select symbol set"
-                options={Object.entries(symbolSets).map(([key, set]) => ({
-                  value: key,
-                  label: set.name,
-                  preview: set.symbols,
-                  description: set.description
-                }))}
-                className="w-full"
-              />
+          <Card className="border border-border/80 bg-background/20 shadow-none">
+            <CardContent className="space-y-3 px-4 pb-4 pt-4">
+              <div className="space-y-1.5">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Symbol Set</div>
+                <Combobox
+                  value={symbolSet}
+                  onChange={(v) => setSymbolSet(v)}
+                  placeholder="Select symbol set"
+                  options={Object.entries(symbolSets).map(([key, set]) => ({
+                    value: key,
+                    label: set.name,
+                    preview: set.symbols,
+                    description: set.description
+                  }))}
+                  className="w-full"
+                />
+              </div>
 
               {symbolSet === 'custom' && (
-                <div className="space-y-1">
-                  <label className="text-sm text-foreground">Custom Symbols</label>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">Custom Symbols</label>
                   <Input
                     placeholder="Enter custom symbols"
                     value={customSymbols}
@@ -107,118 +136,61 @@ const PasswordControls = ({
                 </div>
               )}
 
-              <div className="text-xs text-muted-foreground">
-                <span className="mr-1">Using:</span>
-                <span>
-                  {symbolSet === 'custom' ? customSymbols || 'No custom symbols' : symbolSets[symbolSet]?.symbols}
-                </span>
+              <div className="rounded-sm border border-border/80 bg-background/20 px-3 py-2 text-xs text-muted-foreground">
+                <span className="mr-1 font-medium text-foreground">Using:</span>
+                <span>{symbolSet === 'custom' ? customSymbols || 'No custom symbols' : symbolSets[symbolSet]?.symbols}</span>
               </div>
             </CardContent>
           </Card>
         )}
-        </CardContent>
-      </Card>
+      </ControlsShell>
     )
   }
 
   if (activeTab === 'memorable') {
     return (
-      <Card>
-        <CardHeader className="pb-1 pt-3 px-4">
-          <CardTitle className="text-sm">Memorable Password Options</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-2 px-4 pb-4">
-        <div className="space-y-2">
-          <label className="text-sm text-foreground">Words</label>
-          <div className="flex items-center gap-3">
-            <span className="w-4 text-xs text-muted-foreground">2</span>
-            <div className="relative flex-1 group"
-              onMouseDown={() => setDraggingWords(true)}
-              onMouseUp={() => setDraggingWords(false)}
-              onMouseLeave={() => setDraggingWords(false)}
-              onTouchStart={() => setDraggingWords(true)}
-              onTouchEnd={() => setDraggingWords(false)}
-            >
-              <Slider
-                value={[wordCount]}
-                min={2}
-                max={6}
-                onValueChange={(val) => setWordCount(val[0])}
-                aria-label="Words"
-              />
-              <div
-                className="absolute -top-7 translate-x-[-50%] text-[10px] px-1.5 py-0.5 rounded bg-popover text-popover-foreground border shadow transition-all duration-150 ease-out"
-                style={{ left: `${Math.min(100, Math.max(0, ((wordCount - 2) / (6 - 2)) * 100))}%` }}
-                data-active={draggingWords ? 'true' : 'false'}
-              >
-                {wordCount}
-              </div>
-            </div>
-            <span className="w-6 text-xs text-muted-foreground text-right">6</span>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="text-xs text-muted-foreground w-10 text-right cursor-default">{wordCount}</div>
-                </TooltipTrigger>
-                <TooltipContent>Words: {wordCount}</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
+      <ControlsShell activeTab={activeTab} setActiveTab={setActiveTab}>
+        <div className="border-t border-border/80 pt-5">
+          <SliderField
+            label="Length"
+            min={2}
+            max={6}
+            value={wordCount}
+            onChange={setWordCount}
+            dragging={draggingWords}
+            setDragging={setDraggingWords}
+            ariaLabel="Words"
+          />
         </div>
 
-        <div className="flex items-center gap-2">
-          <Switch id="includeCapitalization" checked={includeCapitalization} onCheckedChange={setIncludeCapitalization} />
-          <label htmlFor="includeCapitalization" className="text-sm text-foreground">Capitalization</label>
+        <div className="border-t border-border/80 pt-5">
+          <ToggleField
+            id="includeCapitalization"
+            label="Capitalization"
+            checked={includeCapitalization}
+            onCheckedChange={setIncludeCapitalization}
+          />
         </div>
-        </CardContent>
-      </Card>
+      </ControlsShell>
     )
   }
 
   if (activeTab === 'pin') {
     return (
-      <Card>
-        <CardHeader className="pb-1 pt-3 px-4">
-          <CardTitle className="text-sm">PIN Options</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 pt-2 px-4 pb-4">
-        <label className="text-sm text-foreground">Digits</label>
-        <div className="flex items-center gap-3">
-          <span className="w-4 text-xs text-muted-foreground">4</span>
-          <div className="relative flex-1 group"
-            onMouseDown={() => setDraggingPin(true)}
-            onMouseUp={() => setDraggingPin(false)}
-            onMouseLeave={() => setDraggingPin(false)}
-            onTouchStart={() => setDraggingPin(true)}
-            onTouchEnd={() => setDraggingPin(false)}
-          >
-            <Slider
-              value={[pinLength]}
-              min={4}
-              max={12}
-              onValueChange={(val) => setPinLength(val[0])}
-              aria-label="Digits"
-            />
-            <div
-              className="absolute -top-7 translate-x-[-50%] text-[10px] px-1.5 py-0.5 rounded bg-popover text-popover-foreground border shadow transition-all duration-150 ease-out"
-              style={{ left: `${Math.min(100, Math.max(0, ((pinLength - 4) / (12 - 4)) * 100))}%` }}
-              data-active={draggingPin ? 'true' : 'false'}
-            >
-              {pinLength}
-            </div>
-          </div>
-          <span className="w-6 text-xs text-muted-foreground text-right">12</span>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="text-xs text-muted-foreground w-10 text-right cursor-default">{pinLength}</div>
-              </TooltipTrigger>
-              <TooltipContent>Digits: {pinLength}</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+      <ControlsShell activeTab={activeTab} setActiveTab={setActiveTab}>
+        <div className="border-t border-border/80 pt-5">
+          <SliderField
+            label="Length"
+            min={4}
+            max={12}
+            value={pinLength}
+            onChange={setPinLength}
+            dragging={draggingPin}
+            setDragging={setDraggingPin}
+            ariaLabel="Digits"
+          />
         </div>
-        </CardContent>
-      </Card>
+      </ControlsShell>
     )
   }
 
