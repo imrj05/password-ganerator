@@ -5,24 +5,15 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  css: {
-    devSourcemap: false
+  server: {
+    host: '0.0.0.0',
+    allowedHosts: true
   },
-  build: {
-    outDir: 'dist',
-    rollupOptions: {
-      input: {
-        popup: 'popup.html',
-        contentScript: 'contentScript.js'
-      },
-      output: {
-        entryFileNames: '[name].js',
-        chunkFileNames: '[name].js',
-        assetFileNames: '[name].[ext]'
-      }
-    }
+  preview: {
+    host: '0.0.0.0',
+    allowedHosts: true
   },
-  resolve :{
+  resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src')
     }

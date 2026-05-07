@@ -2,7 +2,6 @@
 module.exports = {
   content: [
     './index.html',
-    './popup.html',
     './src/**/*.{js,jsx,ts,tsx,html}',
   ],
   theme: {
@@ -15,5 +14,5 @@ module.exports = {
       }
     }
   },
-  plugins: [require('@tailwindcss/forms'), require('tailwindcss-animate')]
+  plugins: []
 }
