@@ -13,6 +13,7 @@ import {
   Sun,
   WandSparkles
 } from 'lucide-react'
+import appIcon from '../icons/icon128.png'
 
 const product = {
   name: 'SecurePass Generator',
@@ -137,7 +138,7 @@ const LegalPage = ({ document }) => (
       <header className="flex items-center justify-between gap-4 border-b border-border/80 pb-6">
         <a href="/" className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-sm border border-border/80 bg-card shadow-sm">
-            <img src="icons/icon128.png" alt="SecurePass Generator" className="h-7 w-7 object-contain" />
+            <img src={appIcon} alt="SecurePass Generator" className="h-7 w-7 object-contain" />
           </div>
           <div>
             <p className="text-sm font-semibold tracking-tight">{product.name}</p>
@@ -209,7 +210,7 @@ const App = () => {
         <header className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-sm border border-border/80 bg-card shadow-sm">
-              <img src="icons/icon128.png" alt="SecurePass Generator" className="h-7 w-7 object-contain" />
+              <img src={appIcon} alt="SecurePass Generator" className="h-7 w-7 object-contain" />
             </div>
             <div>
               <p className="text-sm font-semibold tracking-tight">{product.name}</p>
