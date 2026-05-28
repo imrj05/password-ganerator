@@ -12,6 +12,7 @@ class SecurePasswordGenerator {
         brackets: '()[]{}',
         punctuation: '!@#$%&*+-=?:;,.',
         math: '+-=*%^',
+        dbsafe: '_.-~*+',
         custom: ''
       },
       ambiguous: 'il1Lo0O', // Characters that can be confused
@@ -125,6 +126,11 @@ class SecurePasswordGenerator {
         symbols: this.charSets.symbolSets.math,
         name: 'Math',
         description: 'Mathematical symbols'
+      },
+      dbsafe: {
+        symbols: this.charSets.symbolSets.dbsafe,
+        name: 'DB & Env Safe',
+        description: 'Safe for DB URLs, .env files, & shell cmd'
       },
       custom: {
         symbols: '',

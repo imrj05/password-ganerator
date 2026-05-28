@@ -19,7 +19,8 @@ const STORAGE_KEYS = {
   CREDENTIALS_ENABLED: 'credentialsEnabled',
   CREDENTIAL_NEVER_SAVE_DOMAINS: 'credentialNeverSaveDomains',
   WRAPPING_JWK: 'crypto_wrapping_jwk_v1',
-  PENDING_CREDENTIAL_PROMPT: 'pendingCredentialPrompt'
+  PENDING_CREDENTIAL_PROMPT: 'pendingCredentialPrompt',
+  SUGGESTION_ENABLED: 'suggestionEnabled'
 }
 const SYMBOL_SETS = {
   basic: '!@#$%^&*',
@@ -59,6 +60,8 @@ let pendingSavePayload = null
 let initialized = false
 let generatedPasswordField = null
 const dismissedFields = new WeakSet()
+let isCurrentDomainDismissed = false
+const DISMISSED_DOMAINS_KEY = 'dismissedSuggestionDomains'
 const submittedForms = new WeakMap()
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
@@ -113,6 +116,24 @@ async function setStorageValue(key, value) {
       // ignore extension storage failures
     }
   }
+}
+async function loadDismissalState() {
+  const dismissed = await getStorageValue(DISMISSED_DOMAINS_KEY, [])
+  isCurrentDomainDismissed = Array.isArray(dismissed) && dismissed.includes(location.hostname)
+}
+async function addDomainToDismissed() {
+  const dismissed = await getStorageValue(DISMISSED_DOMAINS_KEY, [])
+  const list = Array.isArray(dismissed) ? dismissed : []
+  if (!list.includes(location.hostname)) {
+    list.push(location.hostname)
+    await setStorageValue(DISMISSED_DOMAINS_KEY, list)
+  }
+}
+async function removeDomainFromDismissed() {
+  const dismissed = await getStorageValue(DISMISSED_DOMAINS_KEY, [])
+  const list = Array.isArray(dismissed) ? dismissed : []
+  const filtered = list.filter(d => d !== location.hostname)
+  await setStorageValue(DISMISSED_DOMAINS_KEY, filtered)
 }
 function normalizeDomain(value = '') {
   if (!value) return ''
@@ -187,7 +208,10 @@ async function enrollPlatformCredential() {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
       rp: { name: 'SecurePass Generator' },
       user: { id: userId, name: 'user@local', displayName: 'SecurePass User' },
-      pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+      pubKeyCredParams: [
+        { type: 'public-key', alg: -7 },   // ES256
+        { type: 'public-key', alg: -257 }  // RS256
+      ],
       authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
       timeout: 60000,
     }
@@ -325,7 +349,7 @@ function isUsernameField(field) {
   return false
 }
 function isEligibleSuggestionField(field) {
-  return isPasswordField(field) && !field.value && !dismissedFields.has(field)
+  return isPasswordField(field) && !field.value && !dismissedFields.has(field) && !isCurrentDomainDismissed
 }
 function isEligibleTriggerField(field) {
   return isPasswordField(field) && !field.value
@@ -918,6 +942,12 @@ function showGeneratedSuggestion(field) {
   return true
 }
 async function showSuggestionForFirstEligibleField() {
+  // Respect the user's "Password Suggestion" toggle from Settings
+  const suggestionEnabled = await getStorageValue(STORAGE_KEYS.SUGGESTION_ENABLED, true)
+  if (suggestionEnabled === false) {
+    hideSuggestion()
+    return null
+  }
   const field = getPreferredSuggestionField()
   if (!field) {
     hideSuggestion()
@@ -926,8 +956,10 @@ async function showSuggestionForFirstEligibleField() {
   const credentials = await getSavedCredentials(location.hostname)
   const isSignInContext = getPasswordFields(field.form || document).length === 1
   if (isSignInContext && credentials.length) {
-    await showCredentialSuggestion(field, credentials)
-    return field
+    if (!dismissedFields.has(field)) {
+      await showCredentialSuggestion(field, credentials)
+      return field
+    }
   }
   showGeneratedSuggestion(field)
   return field
@@ -1112,6 +1144,8 @@ function handleDismissClick(event) {
     dismissedFields.add(activeField)
     showTriggerForField(activeField)
   }
+  isCurrentDomainDismissed = true
+  addDomainToDismissed()
   hideSuggestion()
   scheduleAutoShow(0)
 }
@@ -1124,6 +1158,8 @@ async function handleTriggerClick(event) {
     return
   }
   dismissedFields.delete(field)
+  isCurrentDomainDismissed = false
+  removeDomainFromDismissed()
   activeField = field
   const credentials = await getSavedCredentials(location.hostname)
   const isSignInContext = getPasswordFields(field.form || document).length === 1
@@ -1151,8 +1187,10 @@ async function handleFocusIn(event) {
   const credentials = await getSavedCredentials(location.hostname)
   const isSignInContext = getPasswordFields(field.form || document).length === 1
   if (isSignInContext && credentials.length) {
-    await showCredentialSuggestion(field, credentials)
-    return
+    if (!dismissedFields.has(field)) {
+      await showCredentialSuggestion(field, credentials)
+      return
+    }
   }
   if (isEligibleSuggestionField(field)) {
     showGeneratedSuggestion(field)
@@ -1330,6 +1368,7 @@ async function initializeAutoSuggestion() {
   if (initialized) return
   initialized = true
   ensureUi()
+  await loadDismissalState()
   await restorePendingSavePrompt()
   scheduleAutoShow(0)
 }

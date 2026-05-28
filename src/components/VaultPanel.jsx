@@ -3,12 +3,12 @@ import { Button } from './ui/button'
 import { Card } from './ui/card'
 import { Badge } from './ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
-import { Copy, Eye, KeyRound, Trash2, UserRound, Send, ShieldCheck } from 'lucide-react'
+import { Copy, Eye, KeyRound, Trash2, UserRound, Send } from 'lucide-react'
 import { decryptText } from '@/lib/crypto'
 import { enrollPlatformCredential, isAuthWindowValid, verifyPlatformCredential } from '@/lib/webauthn'
 import { toast } from 'sonner'
 
-const VaultPanel = ({ credentialsEnabled, setCredentialsEnabled, credentialsData, onCopyField, onFillCredential, onRemoveCredential, formatTimestamp }) => {
+const VaultPanel = ({ credentialsData, onCopyField, onFillCredential, onRemoveCredential, formatTimestamp }) => {
   const [revealed, setRevealed] = React.useState({})
   const revealTimers = React.useRef({})
 
@@ -68,19 +68,9 @@ const VaultPanel = ({ credentialsEnabled, setCredentialsEnabled, credentialsData
     <TooltipProvider>
       <div className="space-y-3">
         <Card className="border border-white/10 bg-background/75 p-4">
-          <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold">Saved Logins</div>
             <div className="text-xs text-muted-foreground">Store encrypted usernames and passwords for sign-in autofill.</div>
-          </div>
-          <button
-            type="button"
-            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${credentialsEnabled ? 'border-emerald-500/20 bg-emerald-500/12 text-emerald-700 dark:text-emerald-300' : 'border-border/60 bg-muted/70 text-muted-foreground'}`}
-            onClick={() => setCredentialsEnabled(!credentialsEnabled)}
-          >
-            <ShieldCheck size={14} />
-            {credentialsEnabled ? 'Enabled' : 'Disabled'}
-          </button>
           </div>
         </Card>
 

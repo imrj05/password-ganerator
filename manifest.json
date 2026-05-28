@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "SecurePass Generator",
-    "version": "1.2.3",
+    "version": "1.2.4",
     "description": "Generate cryptographically secure passwords (random, memorable, PIN) locally with customizable options and a privacy-first design",
     "permissions": [
         "clipboardWrite",

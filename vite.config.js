@@ -8,23 +8,23 @@ export default defineConfig({
   css: {
     devSourcemap: false
   },
+  resolve :{
+    alias: {
+      '@': path.resolve(__dirname, 'src')
+    }
+  },
   build: {
     outDir: 'dist',
     rollupOptions: {
       input: {
-        popup: 'popup.html',
-        contentScript: 'contentScript.js'
+        popup: path.resolve(__dirname, 'popup.html'),
+        contentScript: path.resolve(__dirname, 'contentScript.js')
       },
       output: {
         entryFileNames: '[name].js',
         chunkFileNames: '[name].js',
         assetFileNames: '[name].[ext]'
       }
-    }
-  },
-  resolve :{
-    alias: {
-      '@': path.resolve(__dirname, 'src')
     }
   }
 })

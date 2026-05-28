@@ -8,8 +8,6 @@ import { decryptFromHistory } from '@/lib/crypto'
 import { enrollPlatformCredential, verifyPlatformCredential, isAuthWindowValid } from '@/lib/webauthn'
 import { toast } from 'sonner'
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './ui/tooltip'
-import { Switch } from './ui/switch'
-import { clearAuthWindow } from '@/lib/webauthn'
 
 const HistoryPanel = ({
   showHistory,
@@ -17,11 +15,6 @@ const HistoryPanel = ({
   onBack,
   historyData,
   historyStats,
-  historyEnabled,
-  setHistoryEnabled,
-  historyClearOnClose,
-  setConfirmModalMode,
-  setShowConfirmModal,
   exportHistory,
   clearHistory,
   removeHistoryEntry,
@@ -110,33 +103,6 @@ const HistoryPanel = ({
           </div>
           <TooltipProvider>
             <div className="flex flex-wrap items-center gap-2 justify-between md:justify-end">
-
-              <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/60 px-3 py-1.5">
-                <span className="text-xs text-muted-foreground">History</span>
-                <Switch
-                  id="history-enabled"
-                  checked={!!historyEnabled}
-                  onCheckedChange={(checked) => {
-                    setHistoryEnabled(checked)
-                    try {
-                      toast.success(checked ? 'History enabled' : 'History disabled', { duration: 1800 })
-                    } catch (e) {}
-                  }}
-                />
-              </div>
-
-              <div className="flex items-center gap-2 rounded-full border border-border/60 bg-background/60 px-3 py-1.5">
-                <span className="text-xs text-muted-foreground">Clear on close</span>
-                <Switch
-                  id="history-clear-on-close"
-                  checked={!!historyClearOnClose}
-                  onCheckedChange={() => {
-                    setConfirmModalMode(historyClearOnClose ? 'disable' : 'enable')
-                    setShowConfirmModal(true)
-                  }}
-                />
-              </div>
-
               {historyData.length > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>

@@ -25,6 +25,13 @@
     scrollbar-width: none !important;
 }
 
+html,
+body,
+#root {
+    min-height: 100%;
+    background: var(--background);
+}
+
 body {
     font-family: var(--font-sans);
     font-kerning: normal;
@@ -303,8 +310,9 @@ body {
     margin: 0;
     padding: 0;
     font-family: var(--font-sans);
-    background: var(--background-color);
-    min-height: 80vh;
+    background: var(--background);
+    color: var(--foreground);
+    min-height: 100vh;
 }
 
 .app-container {

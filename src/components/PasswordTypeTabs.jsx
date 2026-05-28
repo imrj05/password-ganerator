@@ -1,11 +1,12 @@
 import React from 'react'
-import { Shuffle, Lightbulb, Hash } from 'lucide-react'
+import { Shuffle, Lightbulb, Hash, Hexagon } from 'lucide-react'
 import { Button } from './ui/button'
 
 const tabs = [
   { id: 'random', label: 'Password', icon: Shuffle },
   { id: 'memorable', label: 'Passphrase', icon: Lightbulb },
-  { id: 'pin', label: 'PIN', icon: Hash }
+  { id: 'pin', label: 'PIN', icon: Hash },
+  { id: 'hex', label: 'Hexadecimal', icon: Hexagon }
 ]
 
 const PasswordTypeTabs = ({ activeTab, setActiveTab }) => {

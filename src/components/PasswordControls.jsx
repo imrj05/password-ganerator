@@ -1,51 +1,9 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { Combobox } from './ui/Combobox'
 import { Switch } from './ui/switch'
 import { Input } from './ui/input'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
-import { Slider } from './ui/slider'
 import PasswordTypeTabs from './PasswordTypeTabs'
-
-const SliderField = ({
-  label,
-  min,
-  max,
-  value,
-  onChange,
-  dragging,
-  setDragging,
-  ariaLabel
-}) => (
-  <div className="space-y-4">
-    <div className="flex items-baseline justify-between gap-3">
-      <label className="text-sm font-medium text-foreground">{label} <span className="text-muted-foreground">({min}-{max})</span></label>
-      <span className="text-sm text-foreground">{value}</span>
-    </div>
-    <div
-      className="relative"
-      onMouseDown={() => setDragging(true)}
-      onMouseUp={() => setDragging(false)}
-      onMouseLeave={() => setDragging(false)}
-      onTouchStart={() => setDragging(true)}
-      onTouchEnd={() => setDragging(false)}
-    >
-      <Slider
-        value={[value]}
-        min={min}
-        max={max}
-        onValueChange={(val) => onChange(val[0])}
-        aria-label={ariaLabel}
-      />
-      <div
-        className="absolute -top-8 translate-x-[-50%] rounded-sm border border-border/60 bg-popover px-2 py-0.5 text-[10px] text-popover-foreground shadow-sm transition-all duration-150 ease-out"
-        style={{ left: `${Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100))}%` }}
-        data-active={dragging ? 'true' : 'false'}
-      >
-        {value}
-      </div>
-    </div>
-  </div>
-)
 
 const ToggleField = ({ id, label, checked, onCheckedChange }) => (
   <div className="rounded-sm border border-border/80 bg-background/25 px-3 py-2.5">
@@ -71,39 +29,25 @@ const ControlsShell = ({ activeTab, setActiveTab, children }) => (
 const PasswordControls = ({
   activeTab,
   setActiveTab,
-  length, setLength,
+  includeLowercase, setIncludeLowercase,
+  includeUppercase, setIncludeUppercase,
   includeNumbers, setIncludeNumbers,
   includeSymbols, setIncludeSymbols,
+  excludeAmbiguous, setExcludeAmbiguous,
   symbolSet, setSymbolSet,
   customSymbols, setCustomSymbols,
   symbolSets,
-  wordCount, setWordCount,
   includeCapitalization, setIncludeCapitalization,
-  pinLength, setPinLength
 }) => {
-  const [draggingLen, setDraggingLen] = useState(false)
-  const [draggingWords, setDraggingWords] = useState(false)
-  const [draggingPin, setDraggingPin] = useState(false)
-
   if (activeTab === 'random') {
     return (
       <ControlsShell activeTab={activeTab} setActiveTab={setActiveTab}>
-        <div className="border-t border-border/80 pt-5">
-          <SliderField
-            label="Length"
-            min={4}
-            max={50}
-            value={length}
-            onChange={setLength}
-            dragging={draggingLen}
-            setDragging={setDraggingLen}
-            ariaLabel="Characters"
-          />
-        </div>
-
         <div className="space-y-3 border-t border-border/80 pt-5">
-          <ToggleField id="includeNumbers" label="Numbers" checked={includeNumbers} onCheckedChange={setIncludeNumbers} />
+          <ToggleField id="includeLowercase" label="Lowercase letters (a-z)" checked={includeLowercase} onCheckedChange={setIncludeLowercase} />
+          <ToggleField id="includeUppercase" label="Uppercase letters (A-Z)" checked={includeUppercase} onCheckedChange={setIncludeUppercase} />
+          <ToggleField id="includeNumbers" label="Numbers (0-9)" checked={includeNumbers} onCheckedChange={setIncludeNumbers} />
           <ToggleField id="includeSymbols" label="Symbols" checked={includeSymbols} onCheckedChange={setIncludeSymbols} />
+          <ToggleField id="excludeAmbiguous" label="Exclude Ambiguous (e.g. o, 0, l, 1)" checked={excludeAmbiguous} onCheckedChange={setExcludeAmbiguous} />
         </div>
 
         {includeSymbols && (
@@ -151,19 +95,6 @@ const PasswordControls = ({
     return (
       <ControlsShell activeTab={activeTab} setActiveTab={setActiveTab}>
         <div className="border-t border-border/80 pt-5">
-          <SliderField
-            label="Length"
-            min={2}
-            max={6}
-            value={wordCount}
-            onChange={setWordCount}
-            dragging={draggingWords}
-            setDragging={setDraggingWords}
-            ariaLabel="Words"
-          />
-        </div>
-
-        <div className="border-t border-border/80 pt-5">
           <ToggleField
             id="includeCapitalization"
             label="Capitalization"
@@ -178,18 +109,15 @@ const PasswordControls = ({
   if (activeTab === 'pin') {
     return (
       <ControlsShell activeTab={activeTab} setActiveTab={setActiveTab}>
-        <div className="border-t border-border/80 pt-5">
-          <SliderField
-            label="Length"
-            min={4}
-            max={12}
-            value={pinLength}
-            onChange={setPinLength}
-            dragging={draggingPin}
-            setDragging={setDraggingPin}
-            ariaLabel="Digits"
-          />
-        </div>
+        {/* No options here as PIN length is now managed on top */}
+      </ControlsShell>
+    )
+  }
+
+  if (activeTab === 'hex') {
+    return (
+      <ControlsShell activeTab={activeTab} setActiveTab={setActiveTab}>
+        {/* No options here as Hexadecimal length is managed on top */}
       </ControlsShell>
     )
   }

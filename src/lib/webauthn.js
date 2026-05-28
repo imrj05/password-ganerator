@@ -52,7 +52,10 @@ export async function enrollPlatformCredential() {
     challenge: crypto.getRandomValues(new Uint8Array(32)),
     rp: { name: 'SecurePass Generator' },
     user: { id: userId, name: 'user@local', displayName: 'SecurePass User' },
-    pubKeyCredParams: [{ type: 'public-key', alg: -7 }], // ES256
+    pubKeyCredParams: [
+      { type: 'public-key', alg: -7 },   // ES256
+      { type: 'public-key', alg: -257 }  // RS256
+    ],
     authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
     timeout: 60000,
   }

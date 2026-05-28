@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App'
+import PopupApp from './PopupApp'
 import { ThemeProvider } from './components/theme-provider'
 import './styles/tailwind.css'
 // Apply persisted theme early to reduce FOUC without inline scripts
@@ -19,7 +19,7 @@ try {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
-      <App />
+      <PopupApp />
     </ThemeProvider>
   </React.StrictMode>
 )

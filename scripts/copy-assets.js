@@ -17,6 +17,13 @@ try {
   const manifestDest = path.join(dist, 'manifest.json')
   if (fs.existsSync(manifestSrc)) copyFile(manifestSrc, manifestDest)
 
+
+
+  // Copy contentScript.js
+  const contentScriptSrc = path.join(root, 'contentScript.js')
+  const contentScriptDest = path.join(dist, 'contentScript.js')
+  if (fs.existsSync(contentScriptSrc)) copyFile(contentScriptSrc, contentScriptDest)
+
   // Copy icons folder if present
   const iconsSrc = path.join(root, 'icons')
   const iconsDest = path.join(dist, 'icons')
