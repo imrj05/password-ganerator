@@ -1,6 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Button } from './ui/button'
+import { Badge } from './ui/badge'
 import { ClipboardCopy, CopyCheck, Send, BadgeCheck, RefreshCcw, Sparkles } from 'lucide-react'
+import { GENERATOR_SHORTCUTS } from '../keyboardShortcuts'
+
+const getShortcutLabel = (action) => GENERATOR_SHORTCUTS.find(shortcut => shortcut.action === action)?.label
+
+const ShortcutBadge = ({ action }) => {
+  const label = getShortcutLabel(action)
+
+  if (!label) return null
+
+  return (
+    <Badge variant="outline" className="ml-1 rounded-sm px-1.5 py-0 text-[10px] leading-4 text-muted-foreground" aria-hidden="true">
+      {label}
+    </Badge>
+  )
+}
 
 const ActionButtons = ({ onCopy, onAutofill, onRefresh, disabled }) => {
   const [copyStatus, setCopyStatus] = useState('idle')
@@ -62,6 +78,7 @@ const ActionButtons = ({ onCopy, onAutofill, onRefresh, disabled }) => {
         >
           {refreshStatus === 'success' ? <Sparkles size={18} /> : <RefreshCcw size={18} />}
           <span>{refreshStatus === 'success' ? 'Updated' : 'Refresh'}</span>
+          <ShortcutBadge action="refresh" />
         </Button>
 
         <Button
@@ -72,6 +89,7 @@ const ActionButtons = ({ onCopy, onAutofill, onRefresh, disabled }) => {
         >
           {copyStatus === 'success' ? <CopyCheck size={18} /> : <ClipboardCopy size={18} />}
           <span>{copyStatus === 'success' ? 'Copied' : 'Copy'}</span>
+          <ShortcutBadge action="copy" />
         </Button>
       </div>
 

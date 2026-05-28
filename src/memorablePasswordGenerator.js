@@ -21,6 +21,28 @@ class MemorablePasswordGenerator {
         'life-changing', 'mind-expanding', 'perspective-shifting', 'worldview-altering', 'paradigm-shifting', 'revolutionary', 'groundbreaking', 'pioneering', 'trailblazing', 'path-breaking', 'innovative', 'cutting-edge', 'state-of-the-art', 'advanced', 'progressive', 'forward-thinking'
     ]
 
+    this.words = this.uniqueWords(this.words.concat([
+      'acorn', 'artist', 'atlas', 'aurora', 'avenue', 'beacon', 'beaver', 'bison',
+      'brook', 'canyon', 'cedar', 'cipher', 'clover', 'comet', 'copper', 'cosmos',
+      'delta', 'ember', 'falconer', 'fern', 'fjord', 'glacier', 'harbor', 'hazel',
+      'heron', 'ivory', 'jade', 'jasper', 'keeper', 'lagoon', 'lantern', 'lotus',
+      'maple', 'meadow', 'meteor', 'mirror', 'nebula', 'nova', 'otter', 'pebble',
+      'prairie', 'raven', 'reef', 'saffron', 'sailor', 'signal', 'summit', 'temple',
+      'timber', 'valley', 'velvet', 'voyage', 'willow', 'zephyr', 'apricot', 'badger',
+      'bamboo', 'basil', 'basket', 'beetle', 'birch', 'blossom', 'butter', 'canvas',
+      'caravan', 'cobalt', 'coral', 'dawn', 'desert', 'dolphin', 'echo', 'elm',
+      'engine', 'feather', 'flame', 'garden', 'geyser', 'granite', 'grove', 'honey',
+      'indigo', 'jasmine', 'kernel', 'ladder', 'marble', 'mosaic', 'nectar', 'onyx',
+      'orchid', 'panda', 'pepper', 'plume', 'ripple', 'sable', 'scarlet', 'sparrow',
+      'spruce', 'starlight', 'tulip', 'tundra', 'violet', 'walnut', 'whisper', 'winter',
+      'amber', 'arrow', 'ash', 'badge', 'bay', 'blizzard', 'boulder', 'branch',
+      'bronze', 'cactus', 'canopy', 'carbon', 'carrot', 'citadel', 'cloud', 'compass',
+      'cricket', 'daisy', 'dune', 'engineer', 'finch', 'frost', 'harvest', 'helmet',
+      'iris', 'juniper', 'kettle', 'labyrinth', 'lion', 'mango', 'mist', 'monarch',
+      'olive', 'opal', 'pioneer', 'radar', 'sapphire', 'satellite', 'sequoia', 'sonnet',
+      'spark', 'torch', 'turtle', 'wanderer', 'wave', 'wildflower', 'yonder'
+    ]))
+
     this.adjectives = [
       'bright', 'swift', 'strong', 'gentle', 'brave', 'wise', 'cool', 'warm', 'dark',
       'light', 'fast', 'slow', 'big', 'small', 'loud', 'quiet', 'smooth', 'rough',
@@ -41,7 +63,50 @@ class MemorablePasswordGenerator {
       'life-changing'
     ]
 
+    this.adjectives = this.uniqueWords(this.adjectives.concat([
+      'agile', 'ancient', 'brisk', 'bronze', 'clever', 'cosmic', 'crisp', 'curious',
+      'daring', 'deep', 'eager', 'earthy', 'electric', 'fabled', 'fierce', 'fluent',
+      'frosty', 'golden', 'hidden', 'humble', 'jade', 'jolly', 'keen', 'lively',
+      'lucid', 'lunar', 'mellow', 'mighty', 'nimble', 'noble', 'polished', 'proud',
+      'rapid', 'rare', 'restful', 'robust', 'silent', 'solar', 'steady', 'stellar',
+      'tidy', 'vivid', 'woven', 'zesty', 'amber', 'brilliant', 'candid', 'cerulean',
+      'cheerful', 'coastal', 'compact', 'dapper', 'durable', 'earnest', 'emerald', 'even',
+      'fearless', 'fertile', 'friendly', 'glossy', 'granite', 'harmonic', 'honorable', 'icy',
+      'loyal', 'marble', 'neat', 'patient', 'quiet', 'sandy', 'scarlet', 'silver',
+      'skillful', 'spry', 'sunlit', 'verdant', 'wild', 'witty'
+    ]))
+
     this.separators = ['-', '_', '.', '!', '@', '#', '$', '%', '^', '&', '*']
+  }
+
+  uniqueWords(words) {
+    return [...new Set(words.map(word => String(word).trim()).filter(Boolean))]
+  }
+
+  getRandomInt(max) {
+    if (!Number.isInteger(max) || max <= 0) {
+      throw new Error('Maximum random value must be a positive integer')
+    }
+
+    const maxUint32 = 0x100000000
+    const range = Math.floor(maxUint32 / max) * max
+    const array = new Uint32Array(1)
+    let value
+
+    do {
+      crypto.getRandomValues(array)
+      value = array[0]
+    } while (value >= range)
+
+    return value % max
+  }
+
+  getVocabularyStats() {
+    return {
+      words: this.words.length,
+      adjectives: this.adjectives.length,
+      total: this.words.length + this.adjectives.length,
+    }
   }
 
   /**
@@ -92,7 +157,7 @@ class MemorablePasswordGenerator {
     for (let i = 0; i < count; i++) {
       let word
 
-      if (i === 0 && Math.random() < 0.5) {
+      if (i === 0 && this.getRandomInt(2) === 0) {
         // Sometimes start with an adjective
         word = this.getRandomWord(this.adjectives)
       } else {
@@ -115,10 +180,7 @@ class MemorablePasswordGenerator {
    * @returns {string} - Random word
    */
   getRandomWord(wordArray) {
-    const array = new Uint32Array(1)
-    crypto.getRandomValues(array)
-    const index = array[0] % wordArray.length
-    return wordArray[index]
+    return wordArray[this.getRandomInt(wordArray.length)]
   }
 
   /**
@@ -127,9 +189,7 @@ class MemorablePasswordGenerator {
    * @returns {string} - Capitalized word
    */
   capitalizeWord(word) {
-    const array = new Uint32Array(1)
-    crypto.getRandomValues(array)
-    const random = array[0] % 3
+    const random = this.getRandomInt(3)
 
     if (random === 0) {
       return word.charAt(0).toUpperCase() + word.slice(1)
@@ -151,10 +211,7 @@ class MemorablePasswordGenerator {
     if (separatorType === 'underscore') return '_'
 
     // Random separator
-    const array = new Uint32Array(1)
-    crypto.getRandomValues(array)
-    const index = array[0] % this.separators.length
-    return this.separators[index]
+    return this.separators[this.getRandomInt(this.separators.length)]
   }
 
   /**
@@ -162,15 +219,11 @@ class MemorablePasswordGenerator {
    * @returns {string} - Random numbers
    */
   getRandomNumbers() {
-    const array = new Uint32Array(1)
-    crypto.getRandomValues(array)
-    const numberCount = (array[0] % 3) + 1 // 1-3 numbers
+    const numberCount = this.getRandomInt(3) + 1 // 1-3 numbers
 
     let numbers = ''
     for (let i = 0; i < numberCount; i++) {
-      const digitArray = new Uint32Array(1)
-      crypto.getRandomValues(digitArray)
-      numbers += (digitArray[0] % 10).toString()
+      numbers += this.getRandomInt(10).toString()
     }
 
     return numbers
@@ -199,7 +252,7 @@ class MemorablePasswordGenerator {
         return words.join('-')
       },
       'Mixed': () => {
-        const wordCount = Math.floor(Math.random() * 3) + 2 // 2-4 words
+        const wordCount = this.getRandomInt(3) + 2 // 2-4 words
         return this.generateMemorablePassword({ wordCount })
       }
     }

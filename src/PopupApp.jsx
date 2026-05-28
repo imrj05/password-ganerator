@@ -4,6 +4,10 @@ import { History, Info, KeyRound, Settings, Wand2, Moon, Sun, ShieldCheck } from
 import { storageManager, STORAGE_KEYS } from './storageUtils'
 import SecurePasswordGenerator from './securePasswordGenerator'
 import MemorablePasswordGenerator from './memorablePasswordGenerator'
+import { PASSWORD_TEMPLATES } from './passwordTemplates'
+import { generatePasswordBatch } from './batchPasswordGenerator'
+import { PASSWORD_POLICIES, validatePasswordPolicy } from './passwordPolicies'
+import { GENERATOR_SHORTCUTS, getGeneratorShortcutAction } from './keyboardShortcuts'
 import { encryptForHistory, decryptText } from './lib/crypto'
 import { enrollPlatformCredential, isAuthWindowValid, verifyPlatformCredential } from './lib/webauthn'
 import logoUrl from '../icons/icon48.png'
@@ -17,6 +21,8 @@ import HistoryPanel from './components/HistoryPanel'
 import VaultPanel from './components/VaultPanel'
 import SettingsPanel from './components/SettingsPanel'
 import { Slider } from './components/ui/slider'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
+import { Badge } from './components/ui/badge'
 
 const secureGen = new SecurePasswordGenerator()
 const memorableGen = new MemorablePasswordGenerator()
@@ -110,6 +116,136 @@ const SliderField = ({
       >
         {value}
       </div>
+    </div>
+  </div>
+)
+
+const PasswordTemplates = ({ onApplyTemplate }) => (
+  <div className="rounded-sm border border-border/80 bg-card/80 px-4 py-3.5 shadow-none">
+    <div className="mb-3 flex items-start justify-between gap-3">
+      <div>
+        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Templates</div>
+        <div className="mt-1 text-xs text-muted-foreground">Apply secure presets for common use cases</div>
+      </div>
+    </div>
+    <div className="grid grid-cols-2 gap-2">
+      {PASSWORD_TEMPLATES.map(template => (
+        <button
+          key={template.id}
+          type="button"
+          onClick={() => onApplyTemplate(template)}
+          className="rounded-sm border border-border/70 bg-background/35 px-3 py-2 text-left transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <div className="text-xs font-medium text-foreground">{template.name}</div>
+          <div className="mt-1 text-[11px] leading-4 text-muted-foreground">{template.description}</div>
+        </button>
+      ))}
+    </div>
+  </div>
+)
+
+const PasswordBatchPanel = ({ passwords, onGenerateBatch, onCopyPassword, disabled }) => (
+  <div className="rounded-sm border border-border/80 bg-card/80 px-4 py-3.5 shadow-none">
+    <div className="mb-3 flex items-start justify-between gap-3">
+      <div>
+        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Batch</div>
+        <div className="mt-1 text-xs text-muted-foreground">Generate multiple options with current settings</div>
+      </div>
+      <button
+        type="button"
+        onClick={onGenerateBatch}
+        disabled={disabled}
+        className="inline-flex items-center gap-1.5 rounded-sm border border-border/80 bg-background/45 px-3 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span>Generate 5</span>
+        <Badge variant="outline" className="rounded-sm px-1.5 py-0 text-[10px] leading-4 text-muted-foreground" aria-hidden="true">
+          B
+        </Badge>
+      </button>
+    </div>
+
+    {passwords.length > 0 ? (
+      <div className="space-y-2">
+        {passwords.map((item, index) => (
+          <div key={`${item}-${index}`} className="flex items-center gap-2 rounded-sm border border-border/60 bg-background/35 px-3 py-2">
+            <div className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">{item}</div>
+            <button
+              type="button"
+              onClick={() => onCopyPassword(item)}
+              className="shrink-0 rounded-sm border border-border/70 px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Copy
+            </button>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div className="rounded-sm border border-dashed border-border/70 bg-background/25 px-3 py-3 text-xs text-muted-foreground">
+        No batch generated yet. Use this when you want to compare several candidates before copying one.
+      </div>
+    )}
+  </div>
+)
+
+const PasswordPolicyPanel = ({ password, policyId, onPolicyChange }) => {
+  const result = validatePasswordPolicy(password, policyId)
+
+  return (
+    <div className="rounded-sm border border-border/80 bg-card/80 px-4 py-3.5 shadow-none">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Policy check</div>
+          <div className="mt-1 text-xs text-muted-foreground">Validate the current password against common requirements</div>
+        </div>
+        <div className={`rounded-sm border px-2 py-1 text-[11px] font-medium ${result.passed ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400'}`}>
+          {result.passedCount}/{result.totalCount}
+        </div>
+      </div>
+
+      <Select value={policyId} onValueChange={onPolicyChange}>
+        <SelectTrigger className="h-9 text-xs" aria-label="Password policy">
+          <SelectValue placeholder="Choose policy" />
+        </SelectTrigger>
+        <SelectContent>
+          {PASSWORD_POLICIES.map(policy => (
+            <SelectItem key={policy.id} value={policy.id}>{policy.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <div className="mt-3 text-[11px] leading-4 text-muted-foreground">
+        {result.policy.description}
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-1.5">
+        {result.checks.map(check => (
+          <div key={check.id} className="flex items-center justify-between gap-2 rounded-sm border border-border/60 bg-background/35 px-3 py-1.5 text-[11px]">
+            <span className="text-muted-foreground">{check.label}</span>
+            <span className={check.passed ? 'font-medium text-emerald-600 dark:text-emerald-400' : 'font-medium text-amber-600 dark:text-amber-400'}>
+              {check.passed ? 'Pass' : 'Missing'}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const KeyboardShortcutsPanel = () => (
+  <div className="rounded-sm border border-border/80 bg-card/80 px-4 py-3.5 shadow-none">
+    <div className="mb-3">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">Shortcuts</div>
+      <div className="mt-1 text-xs text-muted-foreground">Use these keys while the generator is open</div>
+    </div>
+    <div className="grid grid-cols-3 gap-2">
+      {GENERATOR_SHORTCUTS.map(shortcut => (
+        <div key={shortcut.key} className="rounded-sm border border-border/60 bg-background/35 px-2.5 py-2 text-center">
+          <div className="mx-auto flex h-6 w-6 items-center justify-center rounded-sm border border-border/70 bg-background text-xs font-semibold text-foreground">
+            {shortcut.label}
+          </div>
+          <div className="mt-1.5 text-[10px] leading-3 text-muted-foreground">{shortcut.description}</div>
+        </div>
+      ))}
     </div>
   </div>
 )
@@ -248,6 +384,8 @@ export default function PopupApp() {
 
   // ── generated password ──
   const [password, setPassword] = useState('')
+  const [batchPasswords, setBatchPasswords] = useState([])
+  const [policyId, setPolicyId] = useState('standard')
 
   // ── history ──
   const [historyData, setHistoryData] = useState([])
@@ -324,6 +462,8 @@ export default function PopupApp() {
 
   useEffect(() => { refreshPassword() }, [refreshPassword])
 
+  useEffect(() => { setBatchPasswords([]) }, [refreshPassword])
+
   // ── safe toggle handlers ──
   const handleToggleUppercase = (val) => {
     if (!val && !includeLowercase && !includeNumbers && !includeSymbols) {
@@ -356,6 +496,27 @@ export default function PopupApp() {
     }
     setIncludeSymbols(val)
   }
+
+  const applyPasswordTemplate = useCallback((template) => {
+    const s = template.settings
+
+    setActiveTab(s.activeTab)
+
+    if (s.length !== undefined) setLength(s.length)
+    if (s.includeLowercase !== undefined) setIncludeLowercase(s.includeLowercase)
+    if (s.includeUppercase !== undefined) setIncludeUppercase(s.includeUppercase)
+    if (s.includeNumbers !== undefined) setIncludeNumbers(s.includeNumbers)
+    if (s.includeSymbols !== undefined) setIncludeSymbols(s.includeSymbols)
+    if (s.symbolSet !== undefined) setSymbolSet(s.symbolSet)
+    if (s.customSymbols !== undefined) setCustomSymbols(s.customSymbols)
+    if (s.excludeAmbiguous !== undefined) setExcludeAmbiguous(s.excludeAmbiguous)
+    if (s.wordCount !== undefined) setWordCount(s.wordCount)
+    if (s.includeCapitalization !== undefined) setIncludeCapitalization(s.includeCapitalization)
+    if (s.pinLength !== undefined) setPinLength(s.pinLength)
+    if (s.hexLength !== undefined) setHexLength(s.hexLength)
+
+    toast(`${template.name} template applied`)
+  }, [toast])
 
   // ── history helpers ──
   async function refreshHistory() {
@@ -442,6 +603,17 @@ export default function PopupApp() {
     toast('Login removed')
   }
 
+  async function onUpdateCredentialLabel(id, label) {
+    const updated = await storageManager.updateSavedCredentialLabel(id, label)
+    if (!updated) {
+      toast('Unable to update label', 'error')
+      return
+    }
+
+    refreshCredentials()
+    toast(updated.label ? 'Label updated' : 'Label cleared')
+  }
+
   // ── settings toggle helpers ──
   const setHistoryEnabled = async (val) => {
     setHistoryEnabledState(val)
@@ -479,6 +651,27 @@ export default function PopupApp() {
     }
   }
 
+  function handleGenerateBatch() {
+    const batch = generatePasswordBatch(() => generatePasswordForTab(activeTab, {
+      length, includeNumbers, includeSymbols, symbolSet, customSymbols,
+      wordCount, includeCapitalization, pinLength,
+      includeUppercase, includeLowercase, excludeAmbiguous, hexLength,
+    }), 5)
+    setBatchPasswords(batch)
+    toast('Batch generated')
+  }
+
+  async function handleCopyBatchPassword(value) {
+    if (!value) return
+    await navigator.clipboard.writeText(value)
+    toast('Password copied')
+    if (historyEnabled) {
+      const enc = await encryptForHistory(value)
+      await storageManager.addPasswordHistory('copy', activeTab, '', value.length, enc)
+      refreshHistory()
+    }
+  }
+
   async function handleAutofill() {
     if (!password) return
     try {
@@ -500,6 +693,24 @@ export default function PopupApp() {
       }
     } catch { toast('Could not reach the current page', 'error') }
   }
+
+  useEffect(() => {
+    if (activeView !== 'generator') return undefined
+
+    const onKeyDown = (event) => {
+      const action = getGeneratorShortcutAction(event)
+      if (!action) return
+
+      event.preventDefault()
+
+      if (action === 'refresh') refreshPassword()
+      if (action === 'copy') handleCopy()
+      if (action === 'batch') handleGenerateBatch()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [activeView, refreshPassword, password, historyEnabled, activeTab, length, includeNumbers, includeSymbols, symbolSet, customSymbols, wordCount, includeCapitalization, pinLength, includeUppercase, includeLowercase, excludeAmbiguous, hexLength])
 
   // ── clear-on-close confirmation callback ──
   const confirmClearOnClose = (enable) => {
@@ -627,6 +838,23 @@ export default function PopupApp() {
               disabled={!password}
             />
 
+            <PasswordTemplates onApplyTemplate={applyPasswordTemplate} />
+
+            <PasswordPolicyPanel
+              password={password}
+              policyId={policyId}
+              onPolicyChange={setPolicyId}
+            />
+
+            <PasswordBatchPanel
+              passwords={batchPasswords}
+              onGenerateBatch={handleGenerateBatch}
+              onCopyPassword={handleCopyBatchPassword}
+              disabled={!password}
+            />
+
+            <KeyboardShortcutsPanel />
+
             <PasswordControls
               activeTab={activeTab}
               setActiveTab={setActiveTab}
@@ -670,6 +898,7 @@ export default function PopupApp() {
             onCopyField={onCopyField}
             onFillCredential={onFillCredential}
             onRemoveCredential={onRemoveCredential}
+            onUpdateCredentialLabel={onUpdateCredentialLabel}
             formatTimestamp={formatTimestamp}
           />
         )}

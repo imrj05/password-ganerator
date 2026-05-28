@@ -15,4 +15,23 @@ describe('MemorablePasswordGenerator', () => {
     expect(s).toHaveProperty('entropy')
     expect(typeof s.entropy).toBe('number')
   })
+
+  test('exposes an expanded unique vocabulary', () => {
+    const stats = gen.getVocabularyStats()
+
+    expect(stats.words).toBeGreaterThan(250)
+    expect(stats.adjectives).toBeGreaterThan(150)
+    expect(stats.total).toBe(gen.words.length + gen.adjectives.length)
+    expect(new Set(gen.words).size).toBe(gen.words.length)
+    expect(new Set(gen.adjectives).size).toBe(gen.adjectives.length)
+  })
+
+  test('uses crypto-backed random integers within bounds', () => {
+    for (let i = 0; i < 20; i += 1) {
+      const value = gen.getRandomInt(7)
+
+      expect(value).toBeGreaterThanOrEqual(0)
+      expect(value).toBeLessThan(7)
+    }
+  })
 })

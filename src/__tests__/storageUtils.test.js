@@ -119,4 +119,24 @@ describe('storageUtils saved credentials', () => {
     await storageManager.setNeverSaveDomain('example.com', false)
     expect(await storageManager.isNeverSaveDomain('example.com')).toBe(false)
   })
+
+  test('updates saved credential labels', async () => {
+    const cryptoModule = await import('../lib/crypto.js')
+    const storageModule = await import('../storageUtils.js')
+    const { storageManager } = storageModule
+
+    const saved = await storageManager.saveCredential({
+      origin: 'https://example.com/login',
+      domain: 'example.com',
+      username: 'person@example.com',
+      usernameEnc: await cryptoModule.encryptText('person@example.com'),
+      passwordEnc: await cryptoModule.encryptText('Secret#12345'),
+    })
+
+    const updated = await storageManager.updateSavedCredentialLabel(saved.id, 'Personal')
+    const credentials = await storageManager.getSavedCredentials()
+
+    expect(updated.label).toBe('Personal')
+    expect(credentials[0].label).toBe('Personal')
+  })
 })

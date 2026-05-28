@@ -2,8 +2,11 @@ import React from 'react'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
 import { Badge } from './ui/badge'
+import { Input } from './ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog'
-import { History, Download, Trash2, X, Copy, Send, Clock, Globe, Lock, Eye } from 'lucide-react'
+import { History, Download, X, Copy, Send, Clock, Globe, Eye } from 'lucide-react'
+import { filterHistoryEntries, getHistoryPasswordTypes, sortHistoryEntries } from '../historyFilters'
 import { decryptFromHistory } from '@/lib/crypto'
 import { enrollPlatformCredential, verifyPlatformCredential, isAuthWindowValid } from '@/lib/webauthn'
 import { toast } from 'sonner'
@@ -26,7 +29,21 @@ const HistoryPanel = ({
   onConfirmClearOnClose
 }) => {
   const [revealed, setRevealed] = React.useState({}) // id -> plaintext
+  const [searchQuery, setSearchQuery] = React.useState('')
+  const [actionFilter, setActionFilter] = React.useState('all')
+  const [typeFilter, setTypeFilter] = React.useState('all')
+  const [sortBy, setSortBy] = React.useState('newest')
   const revealTimers = React.useRef({})
+  const passwordTypes = React.useMemo(() => getHistoryPasswordTypes(historyData), [historyData])
+  const filteredHistory = React.useMemo(() => {
+    const filtered = filterHistoryEntries(historyData, {
+      query: searchQuery,
+      action: actionFilter,
+      passwordType: typeFilter,
+    })
+
+    return sortHistoryEntries(filtered, sortBy)
+  }, [historyData, searchQuery, actionFilter, typeFilter, sortBy])
 
   const maskEntry = (id) => {
     setRevealed((prev) => {
@@ -140,6 +157,65 @@ const HistoryPanel = ({
           </Card>
         )}
 
+        {historyData.length > 0 && (
+          <Card className="border border-white/10 bg-background/60 p-3 shadow-none">
+            <div className="space-y-2">
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search domain, URL, type, or action"
+                aria-label="Search history"
+              />
+              <div className="grid grid-cols-3 gap-2">
+                <Select
+                  value={actionFilter}
+                  onValueChange={setActionFilter}
+                >
+                  <SelectTrigger className="h-9 text-xs" aria-label="Filter by action">
+                    <SelectValue placeholder="All actions" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All actions</SelectItem>
+                    <SelectItem value="copy">Copied</SelectItem>
+                    <SelectItem value="autofill">Auto-filled</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={typeFilter}
+                  onValueChange={setTypeFilter}
+                >
+                  <SelectTrigger className="h-9 text-xs" aria-label="Filter by password type">
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                  {passwordTypes.map(type => (
+                    <SelectItem key={type} value={type}>{type}</SelectItem>
+                  ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={sortBy}
+                  onValueChange={setSortBy}
+                >
+                  <SelectTrigger className="h-9 text-xs" aria-label="Sort history">
+                    <SelectValue placeholder="Sort" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">Newest</SelectItem>
+                    <SelectItem value="oldest">Oldest</SelectItem>
+                    <SelectItem value="domain">Domain</SelectItem>
+                    <SelectItem value="type">Type</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Showing {filteredHistory.length} of {historyData.length} entries
+              </div>
+            </div>
+          </Card>
+        )}
+
         <div className="space-y-2">
           {historyData.length === 0 ? (
             <Card className="border border-dashed border-border/70 bg-background/55 p-6 text-center shadow-none">
@@ -149,8 +225,16 @@ const HistoryPanel = ({
                 <div className="text-xs">Your copy and autofill actions will appear here</div>
               </div>
             </Card>
+          ) : filteredHistory.length === 0 ? (
+            <Card className="border border-dashed border-border/70 bg-background/55 p-6 text-center shadow-none">
+              <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                <History size={28} />
+                <div className="text-sm">No matching history entries</div>
+                <div className="text-xs">Try changing the search text or filters</div>
+              </div>
+            </Card>
           ) : (
-            historyData.map((entry) => (
+            filteredHistory.map((entry) => (
               <Card key={entry.id} className="border border-white/10 bg-background/60 p-3.5 shadow-none transition-colors hover:bg-background/72">
                 <div className="flex items-start gap-3">
                 <div className="mt-0.5 rounded-sm bg-muted/70 p-2 text-muted-foreground">

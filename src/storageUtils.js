@@ -501,6 +501,24 @@ class StorageManager {
     }
   }
 
+  async updateSavedCredentialLabel(entryId, label = '') {
+    try {
+      const currentCredentials = await this.getSetting(STORAGE_KEYS.SAVED_CREDENTIALS)
+      const trimmedLabel = String(label || '').trim().slice(0, 40)
+      const now = new Date().toISOString()
+      const updatedCredentials = (Array.isArray(currentCredentials) ? currentCredentials : []).map(entry => (
+        entry.id === entryId
+          ? { ...entry, label: trimmedLabel, updatedAt: now }
+          : entry
+      ))
+      await this.setSetting(STORAGE_KEYS.SAVED_CREDENTIALS, updatedCredentials)
+      return updatedCredentials.find(entry => entry.id === entryId) || null
+    } catch (error) {
+      console.error('Error updating saved credential label:', error)
+      return null
+    }
+  }
+
   async touchSavedCredentialUsage(entryId) {
     try {
       const currentCredentials = await this.getSetting(STORAGE_KEYS.SAVED_CREDENTIALS)
