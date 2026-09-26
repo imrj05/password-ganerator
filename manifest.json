@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Secure Password Generator",
-    "version": "1.3.2",
+    "version": "1.2.6",
     "description": "Generate secure passwords (random, memorable, PIN, hex) locally with customizable options and a privacy-first design",
     "permissions": [
         "clipboardWrite",
