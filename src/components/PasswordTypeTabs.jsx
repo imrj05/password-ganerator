@@ -1,6 +1,5 @@
 import React from 'react'
 import { Shuffle, Lightbulb, Hash, Hexagon } from 'lucide-react'
-import { Button } from './ui/button'
 
 const tabs = [
   { id: 'random', label: 'Password', icon: Shuffle },
@@ -9,29 +8,34 @@ const tabs = [
   { id: 'hex', label: 'Hexadecimal', icon: Hexagon }
 ]
 
-const PasswordTypeTabs = ({ activeTab, setActiveTab }) => {
-  return (
-    <div className="space-y-2">
-      {tabs.map(({ id, label, icon: Icon }) => {
-        const isActive = activeTab === id
+const PasswordTypeTabs = ({ activeTab, setActiveTab }) => (
+  <div
+    role="tablist"
+    aria-label="Password type"
+    className="grid grid-cols-4 gap-1 rounded-sm border border-border/80 bg-card/60 p-1"
+  >
+    {tabs.map(({ id, label, icon: Icon }) => {
+      const isActive = activeTab === id
 
-        return (
-          <Button
-            key={id}
-            variant="ghost"
-            onClick={() => setActiveTab(id)}
-            className={`h-auto w-full justify-start gap-3 border border-transparent px-0 py-0 text-left ${isActive ? 'bg-transparent hover:bg-transparent' : 'bg-transparent text-muted-foreground hover:bg-transparent hover:text-foreground'}`}
-          >
-            <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${isActive ? 'border-primary/80 bg-primary/10 text-primary' : 'border-border bg-transparent text-transparent'}`}>
-              <span className={`h-2 w-2 rounded-full ${isActive ? 'bg-primary' : 'bg-transparent'}`} />
-            </span>
-            <Icon size={16} className={isActive ? 'text-primary' : 'text-muted-foreground'} />
-            <span className={`text-[15px] ${isActive ? 'font-medium text-foreground' : 'font-normal text-muted-foreground'}`}>{label}</span>
-          </Button>
-        )
-      })}
-    </div>
-  )
-}
+      return (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          aria-selected={isActive}
+          onClick={() => setActiveTab(id)}
+          className={`flex flex-col items-center gap-1 rounded-sm px-1 py-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+            isActive
+              ? 'bg-primary/12 text-primary'
+              : 'text-muted-foreground hover:bg-background/60 hover:text-foreground'
+          }`}
+        >
+          <Icon size={15} />
+          <span>{label}</span>
+        </button>
+      )
+    })}
+  </div>
+)
 
 export default PasswordTypeTabs

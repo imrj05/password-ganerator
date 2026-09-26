@@ -3,7 +3,6 @@ import { Combobox } from './ui/Combobox'
 import { Switch } from './ui/switch'
 import { Input } from './ui/input'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
-import PasswordTypeTabs from './PasswordTypeTabs'
 
 const ToggleField = ({ id, label, checked, onCheckedChange }) => (
   <div className="rounded-sm border border-border/80 bg-background/25 px-3 py-2.5">
@@ -14,13 +13,12 @@ const ToggleField = ({ id, label, checked, onCheckedChange }) => (
   </div>
 )
 
-const ControlsShell = ({ activeTab, setActiveTab, children }) => (
+const OptionsShell = ({ title, children }) => (
   <Card className="border border-border/80 bg-card/80 px-0 py-0 shadow-none">
     <CardHeader className="px-5 pb-3 pt-5">
-      <CardTitle className="text-base font-medium">Type</CardTitle>
+      <CardTitle className="text-base font-medium">{title}</CardTitle>
     </CardHeader>
     <CardContent className="space-y-5 px-5 pb-5 pt-0">
-      <PasswordTypeTabs activeTab={activeTab} setActiveTab={setActiveTab} />
       {children}
     </CardContent>
   </Card>
@@ -28,7 +26,6 @@ const ControlsShell = ({ activeTab, setActiveTab, children }) => (
 
 const PasswordControls = ({
   activeTab,
-  setActiveTab,
   includeLowercase, setIncludeLowercase,
   includeUppercase, setIncludeUppercase,
   includeNumbers, setIncludeNumbers,
@@ -41,8 +38,8 @@ const PasswordControls = ({
 }) => {
   if (activeTab === 'random') {
     return (
-      <ControlsShell activeTab={activeTab} setActiveTab={setActiveTab}>
-        <div className="space-y-3 border-t border-border/80 pt-5">
+      <OptionsShell title="Password options">
+        <div className="space-y-3">
           <ToggleField id="includeLowercase" label="Lowercase letters (a-z)" checked={includeLowercase} onCheckedChange={setIncludeLowercase} />
           <ToggleField id="includeUppercase" label="Uppercase letters (A-Z)" checked={includeUppercase} onCheckedChange={setIncludeUppercase} />
           <ToggleField id="includeNumbers" label="Numbers (0-9)" checked={includeNumbers} onCheckedChange={setIncludeNumbers} />
@@ -87,41 +84,24 @@ const PasswordControls = ({
             </CardContent>
           </Card>
         )}
-      </ControlsShell>
+      </OptionsShell>
     )
   }
 
   if (activeTab === 'memorable') {
     return (
-      <ControlsShell activeTab={activeTab} setActiveTab={setActiveTab}>
-        <div className="border-t border-border/80 pt-5">
-          <ToggleField
-            id="includeCapitalization"
-            label="Capitalization"
-            checked={includeCapitalization}
-            onCheckedChange={setIncludeCapitalization}
-          />
-        </div>
-      </ControlsShell>
+      <OptionsShell title="Passphrase options">
+        <ToggleField
+          id="includeCapitalization"
+          label="Capitalization"
+          checked={includeCapitalization}
+          onCheckedChange={setIncludeCapitalization}
+        />
+      </OptionsShell>
     )
   }
 
-  if (activeTab === 'pin') {
-    return (
-      <ControlsShell activeTab={activeTab} setActiveTab={setActiveTab}>
-        {/* No options here as PIN length is now managed on top */}
-      </ControlsShell>
-    )
-  }
-
-  if (activeTab === 'hex') {
-    return (
-      <ControlsShell activeTab={activeTab} setActiveTab={setActiveTab}>
-        {/* No options here as Hexadecimal length is managed on top */}
-      </ControlsShell>
-    )
-  }
-
+  // PIN and Hexadecimal lengths are controlled by the slider above
   return null
 }
 

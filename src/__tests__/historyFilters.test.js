@@ -1,4 +1,4 @@
-import { filterHistoryEntries, getHistoryPasswordTypes, sortHistoryEntries } from '../historyFilters'
+import { filterHistoryEntries, getHistoryDayLabel, getHistoryPasswordTypes, getPasswordTypeLabel, sortHistoryEntries } from '../historyFilters'
 
 const entries = [
   {
@@ -37,6 +37,33 @@ describe('historyFilters', () => {
 
   test('returns sorted password types', () => {
     expect(getHistoryPasswordTypes(entries)).toEqual(['memorable', 'random'])
+  })
+
+  test('maps password types to friendly labels', () => {
+    expect(getPasswordTypeLabel('random')).toBe('Password')
+    expect(getPasswordTypeLabel('memorable')).toBe('Passphrase')
+    expect(getPasswordTypeLabel('pin')).toBe('PIN')
+    expect(getPasswordTypeLabel('hex')).toBe('Hexadecimal')
+  })
+
+  test('matches friendly labels in search', () => {
+    const result = filterHistoryEntries(entries, { query: 'passphrase' })
+
+    expect(result).toHaveLength(1)
+    expect(result[0].passwordType).toBe('memorable')
+  })
+
+  test('labels history days relative to today', () => {
+    const reference = new Date(2026, 4, 30, 12)
+
+    expect(getHistoryDayLabel(new Date(2026, 4, 30, 9), reference)).toBe('Today')
+    expect(getHistoryDayLabel(new Date(2026, 4, 29, 9), reference)).toBe('Yesterday')
+    expect(getHistoryDayLabel('not-a-date', reference)).toBe('Unknown date')
+
+    const older = getHistoryDayLabel(new Date(2026, 4, 27, 9), reference)
+    expect(older).not.toBe('Today')
+    expect(older).not.toBe('Yesterday')
+    expect(older.length).toBeGreaterThan(0)
   })
 
   test('sorts history entries by newest and oldest timestamps', () => {

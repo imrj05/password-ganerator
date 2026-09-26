@@ -1,3 +1,14 @@
+const PASSWORD_TYPE_LABELS = {
+  random: 'Password',
+  memorable: 'Passphrase',
+  pin: 'PIN',
+  hex: 'Hexadecimal',
+}
+
+export function getPasswordTypeLabel(type) {
+  return PASSWORD_TYPE_LABELS[type] || type || 'Password'
+}
+
 export function filterHistoryEntries(entries = [], filters = {}) {
   const query = String(filters.query || '').trim().toLowerCase()
   const action = filters.action || 'all'
@@ -13,6 +24,7 @@ export function filterHistoryEntries(entries = [], filters = {}) {
       entry.domain,
       entry.website,
       entry.passwordType,
+      getPasswordTypeLabel(entry.passwordType),
       entry.action,
       entry.timestamp,
     ].filter(Boolean).join(' ').toLowerCase()
@@ -43,4 +55,18 @@ export function sortHistoryEntries(entries = [], sortBy = 'newest') {
 
 export function getHistoryPasswordTypes(entries = []) {
   return [...new Set(entries.map(entry => entry.passwordType).filter(Boolean))].sort()
+}
+
+export function getHistoryDayLabel(timestamp, reference = new Date()) {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return 'Unknown date'
+
+  const startOfReferenceDay = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate())
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const diffDays = Math.round((startOfReferenceDay - startOfDate) / 86400000)
+
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays > 1 && diffDays < 7) return date.toLocaleDateString(undefined, { weekday: 'long' })
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }

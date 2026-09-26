@@ -13,19 +13,28 @@ export function ThemeProvider({ children, defaultTheme = 'system', storageKey = 
 
   useEffect(() => {
     const root = window.document.documentElement
-    // keep both class and data-theme attribute in sync so CSS using either works
-    root.classList.remove('light', 'dark')
-    root.removeAttribute('data-theme')
 
-    if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-      root.classList.add(systemTheme)
-      root.setAttribute('data-theme', systemTheme)
-      return
+    const applyTheme = () => {
+      // keep both class and data-theme attribute in sync so CSS using either works
+      root.classList.remove('light', 'dark')
+      root.removeAttribute('data-theme')
+
+      const resolved = theme === 'system'
+        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : theme
+
+      root.classList.add(resolved)
+      root.setAttribute('data-theme', resolved)
     }
 
-    root.classList.add(theme)
-    root.setAttribute('data-theme', theme)
+    applyTheme()
+
+    if (theme !== 'system') return undefined
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const handleChange = () => applyTheme()
+    media.addEventListener?.('change', handleChange)
+    return () => media.removeEventListener?.('change', handleChange)
   }, [theme])
 
   const setTheme = (t) => {

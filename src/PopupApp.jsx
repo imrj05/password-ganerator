@@ -8,13 +8,15 @@ import { PASSWORD_TEMPLATES } from './passwordTemplates'
 import { generatePasswordBatch } from './batchPasswordGenerator'
 import { PASSWORD_POLICIES, validatePasswordPolicy } from './passwordPolicies'
 import { GENERATOR_SHORTCUTS, getGeneratorShortcutAction } from './keyboardShortcuts'
-import { encryptForHistory, decryptText } from './lib/crypto'
+import { buildHistoryCsv } from './historyExport'
+import { encryptForHistory, encryptText, decryptText, decryptFromHistory } from './lib/crypto'
 import { enrollPlatformCredential, isAuthWindowValid, verifyPlatformCredential } from './lib/webauthn'
 import logoUrl from '../icons/icon48.png'
 import manifest from '../manifest.json'
-import pkg from '../package.json'
 
 import PasswordControls from './components/PasswordControls'
+import PasswordTypeTabs from './components/PasswordTypeTabs'
+import { useTheme } from './components/theme-provider'
 import GeneratedPasswordCard from './components/GeneratedPasswordCard'
 import ActionButtons from './components/ActionButtons'
 import HistoryPanel from './components/HistoryPanel'
@@ -41,13 +43,13 @@ function generatePasswordForTab(tab, opts) {
     const chars = '0123456789'
     const arr = new Uint32Array(opts.pinLength)
     crypto.getRandomValues(arr)
-    return Array.from(arr).map(v => chars[v % chars.length]).join('')
+    return Array.from(arr).map(v => chars[secureGen.getUnbiasedRandom(v, chars.length)]).join('')
   }
   if (tab === 'hex') {
     const chars = '0123456789abcdef'
     const arr = new Uint32Array(opts.hexLength)
     crypto.getRandomValues(arr)
-    return Array.from(arr).map(v => chars[v % chars.length]).join('')
+    return Array.from(arr).map(v => chars[secureGen.getUnbiasedRandom(v, chars.length)]).join('')
   }
   return secureGen.generateSecurePassword({
     length: opts.length,
@@ -92,7 +94,28 @@ const SliderField = ({
   <div className="space-y-4">
     <div className="flex items-baseline justify-between gap-3">
       <label className="text-sm font-medium text-foreground">{label} <span className="text-muted-foreground">({min}-{max})</span></label>
-      <span className="text-sm text-foreground font-semibold">{value} {ariaLabel.toLowerCase()}</span>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => onChange(Math.max(min, value - 1))}
+          disabled={value <= min}
+          aria-label={`Decrease ${ariaLabel.toLowerCase()}`}
+          className="flex h-6 w-6 items-center justify-center rounded-sm border border-border/70 bg-background/60 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          −
+        </button>
+        <span className="w-7 text-center text-sm font-semibold tabular-nums text-foreground">{value}</span>
+        <button
+          type="button"
+          onClick={() => onChange(Math.min(max, value + 1))}
+          disabled={value >= max}
+          aria-label={`Increase ${ariaLabel.toLowerCase()}`}
+          className="flex h-6 w-6 items-center justify-center rounded-sm border border-border/70 bg-background/60 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          +
+        </button>
+        <span className="text-xs text-muted-foreground">{ariaLabel.toLowerCase()}</span>
+      </div>
     </div>
     <div
       className="relative"
@@ -113,6 +136,7 @@ const SliderField = ({
         className="absolute -top-8 translate-x-[-50%] rounded-sm border border-border/60 bg-popover px-2 py-0.5 text-[10px] text-popover-foreground shadow-sm transition-all duration-150 ease-out"
         style={{ left: `${Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100))}%` }}
         data-active={dragging ? 'true' : 'false'}
+        aria-hidden="true"
       >
         {value}
       </div>
@@ -293,13 +317,17 @@ const AboutPanel = () => (
     </div>
 
     <div className="rounded-sm border border-border/70 bg-background/55 px-4 py-3 text-xs leading-5 text-muted-foreground">
-      <div className="flex items-center justify-between gap-3">
-        <span>Extension version</span>
-        <span className="font-medium text-foreground">v{manifest.version}</span>
+      <h3 className="mb-2 text-sm font-medium text-foreground">Support</h3>
+      <div className="flex flex-col gap-1.5">
+        <a href="https://github.com/imrj05/password-ganerator" target="_blank" rel="noreferrer" className="text-primary underline-offset-4 hover:underline">View source on GitHub</a>
+        <a href="https://github.com/imrj05/password-ganerator/issues" target="_blank" rel="noreferrer" className="text-primary underline-offset-4 hover:underline">Report an issue</a>
       </div>
-      <div className="mt-2 flex items-center justify-between gap-3">
-        <span>Package version</span>
-        <span className="font-medium text-foreground">v{pkg.version}</span>
+    </div>
+
+    <div className="rounded-sm border border-border/70 bg-background/55 px-4 py-3 text-xs leading-5 text-muted-foreground">
+      <div className="flex items-center justify-between gap-3">
+        <span>Version</span>
+        <span className="font-medium text-foreground">v{manifest.version}</span>
       </div>
       <div className="mt-2 flex items-center justify-between gap-3">
         <span>Data model</span>
@@ -325,6 +353,9 @@ function useToast() {
 
   const ToastUI = msg ? (
     <div
+      role={msg.type === 'error' ? 'alert' : 'status'}
+      aria-live={msg.type === 'error' ? 'assertive' : 'polite'}
+      aria-atomic="true"
       className={`fixed bottom-4 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-sm px-4 py-2 text-xs font-medium shadow-lg ${
         msg.type === 'error' ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'
       }`}
@@ -349,23 +380,30 @@ const NAV_TABS = [
 
 export default function PopupApp() {
   const { toast, ToastUI } = useToast()
+  const { theme, setTheme } = useTheme()
 
   // ── theme ──
-  const [isDark, setIsDark] = useState(() =>
-    document.documentElement.classList.contains('dark')
-  )
-  const toggleTheme = () => {
-    const next = isDark ? 'light' : 'dark'
-    document.documentElement.classList.remove('light', 'dark')
-    document.documentElement.classList.add(next)
-    document.documentElement.setAttribute('data-theme', next)
-    localStorage.setItem('vite-ui-theme', next)
-    setIsDark(next === 'dark')
+  const isDark = theme === 'dark' || (theme === 'system' && typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches)
+
+  const handleThemeChange = (next) => {
+    setTheme(next)
     storageManager.setSetting(STORAGE_KEYS.THEME, next)
   }
 
+  const toggleTheme = () => handleThemeChange(isDark ? 'light' : 'dark')
+
   // ── navigation ──
   const [activeView, setActiveView] = useState('generator')
+  const mainRef = useRef(null)
+  const skipViewFocus = useRef(true)
+
+  useEffect(() => {
+    if (skipViewFocus.current) {
+      skipViewFocus.current = false
+      return
+    }
+    mainRef.current?.focus()
+  }, [activeView])
 
   // ── generator controls ──
   const [activeTab, setActiveTab] = useState('random')
@@ -392,12 +430,11 @@ export default function PopupApp() {
   const [historyStats, setHistoryStats] = useState(null)
   const [historyEnabled, setHistoryEnabledState] = useState(true)
   const [historyClearOnClose, setHistoryClearOnCloseState] = useState(false)
-  const [showConfirmModal, setShowConfirmModal] = useState(false)
-  const [confirmModalMode, setConfirmModalMode] = useState(null)
 
   // ── vault ──
   const [credentialsData, setCredentialsData] = useState([])
   const [credentialsEnabled, setCredentialsEnabledState] = useState(true)
+  const [dismissedDomains, setDismissedDomains] = useState([])
 
   // ── settings ──
   const [suggestionEnabled, setSuggestionEnabledState] = useState(true)
@@ -409,28 +446,33 @@ export default function PopupApp() {
   const [draggingHex, setDraggingHex] = useState(false)
 
   // ── boot: load from storage ──
+  function applyStoredSettings(s) {
+    setActiveTab(s[STORAGE_KEYS.ACTIVE_TAB] || 'random')
+    setLength(s[STORAGE_KEYS.LENGTH] ?? 20)
+    setIncludeNumbers(s[STORAGE_KEYS.INCLUDE_NUMBERS] ?? true)
+    setIncludeSymbols(s[STORAGE_KEYS.INCLUDE_SYMBOLS] ?? false)
+    setSymbolSet(s[STORAGE_KEYS.SYMBOL_SET] || 'basic')
+    setCustomSymbols(s[STORAGE_KEYS.CUSTOM_SYMBOLS] || '')
+    setWordCount(s[STORAGE_KEYS.WORD_COUNT] ?? 3)
+    setIncludeCapitalization(s[STORAGE_KEYS.INCLUDE_CAPITALIZATION] ?? true)
+    setPinLength(s[STORAGE_KEYS.PIN_LENGTH] ?? 4)
+    setHistoryEnabledState(s[STORAGE_KEYS.HISTORY_ENABLED] ?? true)
+    setHistoryClearOnCloseState(s[STORAGE_KEYS.HISTORY_CLEAR_ON_CLOSE] ?? false)
+    setCredentialsEnabledState(s[STORAGE_KEYS.CREDENTIALS_ENABLED] ?? true)
+    setSuggestionEnabledState(s[STORAGE_KEYS.SUGGESTION_ENABLED] ?? true)
+    setIncludeUppercase(s[STORAGE_KEYS.INCLUDE_UPPERCASE] ?? true)
+    setIncludeLowercase(s[STORAGE_KEYS.INCLUDE_LOWERCASE] ?? true)
+    setExcludeAmbiguous(s[STORAGE_KEYS.EXCLUDE_AMBIGUOUS] ?? false)
+    setHexLength(s[STORAGE_KEYS.HEX_LENGTH] ?? 64)
+    setPolicyId(s[STORAGE_KEYS.POLICY_ID] || 'standard')
+    if (s[STORAGE_KEYS.THEME]) setTheme(s[STORAGE_KEYS.THEME])
+  }
+
   useEffect(() => {
-    storageManager.getAllSettings().then(s => {
-      setActiveTab(s[STORAGE_KEYS.ACTIVE_TAB] || 'random')
-      setLength(s[STORAGE_KEYS.LENGTH] ?? 20)
-      setIncludeNumbers(s[STORAGE_KEYS.INCLUDE_NUMBERS] ?? true)
-      setIncludeSymbols(s[STORAGE_KEYS.INCLUDE_SYMBOLS] ?? false)
-      setSymbolSet(s[STORAGE_KEYS.SYMBOL_SET] || 'basic')
-      setCustomSymbols(s[STORAGE_KEYS.CUSTOM_SYMBOLS] || '')
-      setWordCount(s[STORAGE_KEYS.WORD_COUNT] ?? 3)
-      setIncludeCapitalization(s[STORAGE_KEYS.INCLUDE_CAPITALIZATION] ?? true)
-      setPinLength(s[STORAGE_KEYS.PIN_LENGTH] ?? 4)
-      setHistoryEnabledState(s[STORAGE_KEYS.HISTORY_ENABLED] ?? true)
-      setHistoryClearOnCloseState(s[STORAGE_KEYS.HISTORY_CLEAR_ON_CLOSE] ?? false)
-      setCredentialsEnabledState(s[STORAGE_KEYS.CREDENTIALS_ENABLED] ?? true)
-      setSuggestionEnabledState(s[STORAGE_KEYS.SUGGESTION_ENABLED] ?? true)
-      setIncludeUppercase(s[STORAGE_KEYS.INCLUDE_UPPERCASE] ?? true)
-      setIncludeLowercase(s[STORAGE_KEYS.INCLUDE_LOWERCASE] ?? true)
-      setExcludeAmbiguous(s[STORAGE_KEYS.EXCLUDE_AMBIGUOUS] ?? false)
-      setHexLength(s[STORAGE_KEYS.HEX_LENGTH] ?? 64)
-    })
+    storageManager.getAllSettings().then(applyStoredSettings)
     refreshHistory()
     refreshCredentials()
+    refreshDismissedDomains()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // persist generator settings to storage
@@ -447,6 +489,7 @@ export default function PopupApp() {
   useEffect(() => { storageManager.setSetting(STORAGE_KEYS.INCLUDE_LOWERCASE, includeLowercase) }, [includeLowercase])
   useEffect(() => { storageManager.setSetting(STORAGE_KEYS.EXCLUDE_AMBIGUOUS, excludeAmbiguous) }, [excludeAmbiguous])
   useEffect(() => { storageManager.setSetting(STORAGE_KEYS.HEX_LENGTH, hexLength) }, [hexLength])
+  useEffect(() => { storageManager.setSetting(STORAGE_KEYS.POLICY_ID, policyId) }, [policyId])
 
   // ── auto-regenerate password ──
   const refreshPassword = useCallback(() => {
@@ -527,14 +570,28 @@ export default function PopupApp() {
   }
 
   async function exportHistory() {
+    const verified = await ensureVerified()
+    if (!verified) {
+      toast('Verification failed', 'error')
+      return
+    }
+
     const data = await storageManager.getPasswordHistory(100)
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const passwords = {}
+    for (const entry of data) {
+      if (!entry.passwordEnc) continue
+      passwords[entry.id] = await decryptFromHistory(entry.passwordEnc)
+    }
+
+    const csv = buildHistoryCsv(data, entry => passwords[entry.id])
+    const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'password-history.json'
+    a.download = 'password-history.csv'
     a.click()
     URL.revokeObjectURL(url)
+    toast('History exported')
   }
 
   async function clearHistory() {
@@ -552,6 +609,16 @@ export default function PopupApp() {
   async function refreshCredentials() {
     const data = await storageManager.getSavedCredentials()
     setCredentialsData(data)
+  }
+
+  async function refreshDismissedDomains() {
+    setDismissedDomains(await storageManager.getDismissedSuggestionDomains())
+  }
+
+  async function removeDismissedDomain(domain) {
+    await storageManager.removeDismissedSuggestionDomain(domain)
+    refreshDismissedDomains()
+    toast('Suggestions re-enabled')
   }
 
   async function ensureVerified() {
@@ -603,15 +670,87 @@ export default function PopupApp() {
     toast('Login removed')
   }
 
-  async function onUpdateCredentialLabel(id, label) {
-    const updated = await storageManager.updateSavedCredentialLabel(id, label)
-    if (!updated) {
-      toast('Unable to update label', 'error')
-      return
+  async function onSaveCredential({ domain, username, password, label }) {
+    try {
+      const usernameEnc = await encryptText(username)
+      const passwordEnc = await encryptText(password)
+      const saved = await storageManager.saveCredential({
+        origin: domain,
+        domain,
+        username,
+        usernameEnc,
+        passwordEnc,
+        label,
+      })
+      if (!saved) {
+        toast('Could not save login', 'error')
+        return false
+      }
+      refreshCredentials()
+      toast('Login saved')
+      return true
+    } catch (e) {
+      toast('Could not save login', 'error')
+      return false
     }
+  }
 
-    refreshCredentials()
-    toast(updated.label ? 'Label updated' : 'Label cleared')
+  async function onUpdateCredential(entryId, { domain, username, password, label }) {
+    try {
+      const usernameEnc = await encryptText(username)
+      const passwordEnc = password ? await encryptText(password) : null
+      const updated = await storageManager.updateSavedCredential(entryId, {
+        origin: domain,
+        domain,
+        username,
+        usernameEnc,
+        passwordEnc,
+        label,
+      })
+      if (!updated) {
+        toast('Could not update login', 'error')
+        return false
+      }
+      refreshCredentials()
+      toast('Login updated')
+      return true
+    } catch (e) {
+      toast('Could not update login', 'error')
+      return false
+    }
+  }
+
+  function onGeneratePassword() {
+    return generatePasswordForTab('random', {
+      length,
+      includeUppercase,
+      includeLowercase,
+      includeNumbers,
+      includeSymbols,
+      symbolSet,
+      customSymbols,
+      excludeAmbiguous,
+      wordCount,
+      includeCapitalization,
+      pinLength,
+      hexLength,
+    })
+  }
+
+  async function clearVault() {
+    await storageManager.clearSavedCredentials()
+    setCredentialsData([])
+    toast('Saved logins cleared')
+  }
+
+  async function clearAllData() {
+    await storageManager.clearAll()
+    setHistoryData([])
+    setHistoryStats(null)
+    setCredentialsData([])
+    const settings = await storageManager.getAllSettings()
+    applyStoredSettings(settings)
+    toast('All data cleared')
   }
 
   // ── settings toggle helpers ──
@@ -640,13 +779,23 @@ export default function PopupApp() {
   }
 
   // ── copy & autofill ──
+  async function getActiveTabUrl() {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      return tab?.url || ''
+    } catch (e) {
+      return ''
+    }
+  }
+
   async function handleCopy() {
     if (!password) return
     await navigator.clipboard.writeText(password)
     toast('Password copied')
     if (historyEnabled) {
+      const website = await getActiveTabUrl()
       const enc = await encryptForHistory(password)
-      await storageManager.addPasswordHistory('copy', activeTab, '', password.length, enc)
+      await storageManager.addPasswordHistory('copy', activeTab, website, password.length, enc)
       refreshHistory()
     }
   }
@@ -666,8 +815,9 @@ export default function PopupApp() {
     await navigator.clipboard.writeText(value)
     toast('Password copied')
     if (historyEnabled) {
+      const website = await getActiveTabUrl()
       const enc = await encryptForHistory(value)
-      await storageManager.addPasswordHistory('copy', activeTab, '', value.length, enc)
+      await storageManager.addPasswordHistory('copy', activeTab, website, value.length, enc)
       refreshHistory()
     }
   }
@@ -712,13 +862,6 @@ export default function PopupApp() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [activeView, refreshPassword, password, historyEnabled, activeTab, length, includeNumbers, includeSymbols, symbolSet, customSymbols, wordCount, includeCapitalization, pinLength, includeUppercase, includeLowercase, excludeAmbiguous, hexLength])
 
-  // ── clear-on-close confirmation callback ──
-  const confirmClearOnClose = (enable) => {
-    setHistoryClearOnCloseState(enable)
-    storageManager.setSetting(STORAGE_KEYS.HISTORY_CLEAR_ON_CLOSE, enable)
-    if (enable) storageManager.setSetting(STORAGE_KEYS.HISTORY_PENDING_CLEAR, true)
-  }
-
   // ── render ──
   return (
     <div className="flex h-full min-h-[520px] w-[380px] flex-col bg-background text-foreground">
@@ -752,12 +895,17 @@ export default function PopupApp() {
 
       {/* ── Nav tabs ── */}
       <nav className="flex shrink-0 items-center gap-0.5 border-b border-border/80 bg-card/50 px-2 py-1.5">
-        {NAV_TABS.map(({ id, label, icon: Icon }) => (
+        {NAV_TABS.map(({ id, label, icon: Icon }) => {
+          const count = id === 'history' ? historyData.length : id === 'vault' ? credentialsData.length : 0
+
+          return (
           <button
             key={id}
             type="button"
             id={`nav-${id}`}
             onClick={() => setActiveView(id)}
+            aria-current={activeView === id ? 'page' : undefined}
+            aria-label={count > 0 ? `${label} (${count})` : undefined}
             className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-2 py-1.5 text-[11px] font-medium transition-colors ${
               activeView === id
                 ? 'bg-primary/10 text-primary'
@@ -766,17 +914,25 @@ export default function PopupApp() {
           >
             <Icon size={13} />
             {label}
+            {count > 0 && (
+              <span className="ml-0.5 rounded-sm bg-background/70 px-1 text-[10px] font-semibold tabular-nums" aria-hidden="true">
+                {count}
+              </span>
+            )}
           </button>
-        ))}
+          )
+        })}
       </nav>
 
       {/* ── Main content ── */}
-      <main className="flex-1 overflow-y-auto p-3">
+      <main ref={mainRef} tabIndex={-1} className="flex-1 overflow-y-auto p-3 focus:outline-none">
         {/* Generator */}
         {activeView === 'generator' && (
           <div className="space-y-3">
+            <PasswordTypeTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+
             <div className="rounded-sm border border-border/80 bg-card/80 px-4 py-3.5 shadow-none space-y-4">
-              <GeneratedPasswordCard password={password} />
+              <GeneratedPasswordCard password={password} onCopy={handleCopy} />
               
               {/* Dynamic Length Slider */}
               <div className="border-t border-border/80 pt-4 pb-1">
@@ -838,6 +994,19 @@ export default function PopupApp() {
               disabled={!password}
             />
 
+            <PasswordControls
+              activeTab={activeTab}
+              includeLowercase={includeLowercase} setIncludeLowercase={handleToggleLowercase}
+              includeUppercase={includeUppercase} setIncludeUppercase={handleToggleUppercase}
+              includeNumbers={includeNumbers} setIncludeNumbers={handleToggleNumbers}
+              includeSymbols={includeSymbols} setIncludeSymbols={handleToggleSymbols}
+              excludeAmbiguous={excludeAmbiguous} setExcludeAmbiguous={setExcludeAmbiguous}
+              symbolSet={symbolSet} setSymbolSet={setSymbolSet}
+              customSymbols={customSymbols} setCustomSymbols={setCustomSymbols}
+              symbolSets={SYMBOL_SETS}
+              includeCapitalization={includeCapitalization} setIncludeCapitalization={setIncludeCapitalization}
+            />
+
             <PasswordTemplates onApplyTemplate={applyPasswordTemplate} />
 
             <PasswordPolicyPanel
@@ -854,20 +1023,6 @@ export default function PopupApp() {
             />
 
             <KeyboardShortcutsPanel />
-
-            <PasswordControls
-              activeTab={activeTab}
-              setActiveTab={setActiveTab}
-              includeLowercase={includeLowercase} setIncludeLowercase={handleToggleLowercase}
-              includeUppercase={includeUppercase} setIncludeUppercase={handleToggleUppercase}
-              includeNumbers={includeNumbers} setIncludeNumbers={handleToggleNumbers}
-              includeSymbols={includeSymbols} setIncludeSymbols={handleToggleSymbols}
-              excludeAmbiguous={excludeAmbiguous} setExcludeAmbiguous={setExcludeAmbiguous}
-              symbolSet={symbolSet} setSymbolSet={setSymbolSet}
-              customSymbols={customSymbols} setCustomSymbols={setCustomSymbols}
-              symbolSets={SYMBOL_SETS}
-              includeCapitalization={includeCapitalization} setIncludeCapitalization={setIncludeCapitalization}
-            />
           </div>
         )}
 
@@ -884,10 +1039,7 @@ export default function PopupApp() {
             removeHistoryEntry={removeHistoryEntry}
             formatTimestamp={formatTimestamp}
             getPasswordTypeIcon={getPasswordTypeIcon}
-            showConfirmModal={showConfirmModal}
-            setShowConfirmModalLocal={setShowConfirmModal}
-            confirmModalMode={confirmModalMode}
-            onConfirmClearOnClose={confirmClearOnClose}
+            onToast={toast}
           />
         )}
 
@@ -898,8 +1050,11 @@ export default function PopupApp() {
             onCopyField={onCopyField}
             onFillCredential={onFillCredential}
             onRemoveCredential={onRemoveCredential}
-            onUpdateCredentialLabel={onUpdateCredentialLabel}
+            onSaveCredential={onSaveCredential}
+            onUpdateCredential={onUpdateCredential}
+            onGeneratePassword={onGeneratePassword}
             formatTimestamp={formatTimestamp}
+            onToast={toast}
           />
         )}
 
@@ -914,6 +1069,15 @@ export default function PopupApp() {
             setHistoryEnabled={setHistoryEnabled}
             historyClearOnClose={historyClearOnClose}
             setHistoryClearOnClose={setHistoryClearOnClose}
+            onClearHistory={clearHistory}
+            onClearVault={clearVault}
+            onClearAllData={clearAllData}
+            hasHistory={historyData.length > 0}
+            hasCredentials={credentialsData.length > 0}
+            theme={theme}
+            setTheme={handleThemeChange}
+            dismissedDomains={dismissedDomains}
+            onRemoveDismissedDomain={removeDismissedDomain}
           />
         )}
 
