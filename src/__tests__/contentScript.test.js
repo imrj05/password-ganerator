@@ -469,4 +469,51 @@ describe('contentScript helpers', () => {
     expect(document.querySelector('#securepass-trigger-root svg')).toBeTruthy()
     expect(document.querySelector('#securepass-trigger-root img')).toBeNull()
   })
+
+  test('persists the pending save prompt immediately on form submit', () => {
+    document.body.innerHTML = `
+      <form id="login-form">
+        <input id="login-username" type="email" value="person@example.com" />
+        <input id="login-password" type="password" value="Secret#12345" />
+      </form>
+    `
+    defineVisibleClientRects(document.getElementById('login-password'))
+
+    chromeMock.storage.local.set.mockClear()
+    document.getElementById('login-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+
+    const pendingWrites = chromeMock.storage.local.set.mock.calls
+      .filter(([payload]) => payload && Object.prototype.hasOwnProperty.call(payload, 'pendingCredentialPrompt'))
+
+    expect(pendingWrites.length).toBeGreaterThan(0)
+    expect(pendingWrites.at(-1)[0].pendingCredentialPrompt).toMatchObject({
+      username: 'person@example.com',
+      password: 'Secret#12345',
+      domain: 'localhost',
+    })
+  })
+
+  test('does not restore a pending prompt when saved logins are disabled', async () => {
+    const api = globalThis.__SECUREPASS_CONTENT_SCRIPT__
+    await api.persistPendingSavePrompt({
+      origin: 'http://localhost/login',
+      domain: 'localhost',
+      username: 'person@example.com',
+      password: 'Secret#12345',
+    })
+
+    chromeMock.storage.local.get.mockImplementation(async (key) => {
+      if (key === 'credentialsEnabled') return { credentialsEnabled: false }
+      return {}
+    })
+    chromeMock.storage.local.set.mockClear()
+
+    const restored = await api.restorePendingSavePrompt()
+
+    expect(restored).toBeNull()
+    const clearedWrites = chromeMock.storage.local.set.mock.calls
+      .filter(([payload]) => payload && Object.prototype.hasOwnProperty.call(payload, 'pendingCredentialPrompt'))
+    expect(clearedWrites.length).toBeGreaterThan(0)
+    expect(clearedWrites.at(-1)[0].pendingCredentialPrompt).toBeNull()
+  })
 })

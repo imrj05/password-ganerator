@@ -1487,6 +1487,12 @@ async function clearPendingSavePrompt() {
   await setStorageValue(STORAGE_KEYS.PENDING_CREDENTIAL_PROMPT, null)
 }
 async function restorePendingSavePrompt() {
+  // Only the top frame surfaces a restored prompt, otherwise every
+  // same-origin frame would show its own copy after navigation.
+  if (typeof window !== 'undefined' && window.top !== window.self) {
+    return null
+  }
+
   const savedPrompt = await getStorageValue(STORAGE_KEYS.PENDING_CREDENTIAL_PROMPT, null)
   if (!savedPrompt?.username || !savedPrompt?.password || !savedPrompt?.domain) {
     return null
@@ -1496,6 +1502,14 @@ async function restorePendingSavePrompt() {
     await clearPendingSavePrompt()
     return null
   }
+
+  const shouldPrompt = await shouldSaveCredentialForCurrentSite()
+  const shouldPromptForEntry = shouldPrompt ? await shouldPromptForCredential(savedPrompt) : false
+  if (!shouldPromptForEntry) {
+    await clearPendingSavePrompt()
+    return null
+  }
+
   showSavePrompt(savedPrompt)
   return savedPrompt
 }
@@ -1743,16 +1757,29 @@ function handleFormSubmit(event) {
   if (!(form instanceof HTMLFormElement)) return
   const payload = getCredentialPayloadFromForm(form)
   if (!payload) return
+
   submittedForms.set(form, payload)
+
+  // Persist before the page can navigate. setStorageValue mirrors to
+  // localStorage synchronously, so the payload survives a full reload even
+  // if the async chrome.storage write is cut short.
+  persistPendingSavePrompt(payload)
+
+  // For logins handled in-page (SPAs) show the prompt once the page settles.
+  // Otherwise restorePendingSavePrompt picks it up after the navigation.
   window.setTimeout(async () => {
     const latestPayload = submittedForms.get(form)
     if (!latestPayload) return
+
     const shouldPrompt = await shouldSaveCredentialForCurrentSite()
     const shouldPromptForEntry = shouldPrompt ? await shouldPromptForCredential(latestPayload) : false
+
     if (shouldPrompt && shouldPromptForEntry) {
-      await persistPendingSavePrompt(latestPayload)
       showSavePrompt(latestPayload)
+    } else {
+      await clearPendingSavePrompt()
     }
+
     submittedForms.delete(form)
   }, 600)
 }
