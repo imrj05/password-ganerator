@@ -55,7 +55,6 @@ const STORAGE_KEYS = {
   PASSWORD_HISTORY: 'passwordHistory',
   HISTORY_ENABLED: 'historyEnabled',
   HISTORY_CLEAR_ON_CLOSE: 'historyClearOnClose',
-  HISTORY_PENDING_CLEAR: 'historyPendingClear',
   SAVED_CREDENTIALS: 'savedCredentials',
   CREDENTIALS_ENABLED: 'credentialsEnabled',
   CREDENTIAL_NEVER_SAVE_DOMAINS: 'credentialNeverSaveDomains',
@@ -63,7 +62,9 @@ const STORAGE_KEYS = {
   INCLUDE_UPPERCASE: 'includeUppercase',
   INCLUDE_LOWERCASE: 'includeLowercase',
   EXCLUDE_AMBIGUOUS: 'excludeAmbiguous',
-  HEX_LENGTH: 'hexLength'
+  HEX_LENGTH: 'hexLength',
+  POLICY_ID: 'policyId',
+  DISMISSED_SUGGESTION_DOMAINS: 'dismissedSuggestionDomains'
 }
 
 const DEFAULT_SETTINGS = {
@@ -80,7 +81,6 @@ const DEFAULT_SETTINGS = {
   [STORAGE_KEYS.PASSWORD_HISTORY]: [],
   [STORAGE_KEYS.HISTORY_ENABLED]: true,
   [STORAGE_KEYS.HISTORY_CLEAR_ON_CLOSE]: false,
-  [STORAGE_KEYS.HISTORY_PENDING_CLEAR]: false,
   [STORAGE_KEYS.SAVED_CREDENTIALS]: [],
   [STORAGE_KEYS.CREDENTIALS_ENABLED]: true,
   [STORAGE_KEYS.CREDENTIAL_NEVER_SAVE_DOMAINS]: [],
@@ -88,8 +88,17 @@ const DEFAULT_SETTINGS = {
   [STORAGE_KEYS.INCLUDE_UPPERCASE]: true,
   [STORAGE_KEYS.INCLUDE_LOWERCASE]: true,
   [STORAGE_KEYS.EXCLUDE_AMBIGUOUS]: false,
-  [STORAGE_KEYS.HEX_LENGTH]: 64
+  [STORAGE_KEYS.HEX_LENGTH]: 64,
+  [STORAGE_KEYS.POLICY_ID]: 'standard',
+  [STORAGE_KEYS.DISMISSED_SUGGESTION_DOMAINS]: []
 }
+
+// Secret payloads are not mirrored to localStorage while chrome.storage is
+// available, so cleared history or vault data cannot linger in the mirror.
+const NON_MIRRORED_KEYS = new Set([
+  STORAGE_KEYS.PASSWORD_HISTORY,
+  STORAGE_KEYS.SAVED_CREDENTIALS,
+])
 
 class StorageManager {
   constructor() {
@@ -124,7 +133,7 @@ class StorageManager {
       if (result[key] !== undefined) return result[key]
       // If chrome storage didn't return a value, fall back to localStorage if present
       try {
-        const raw = localStorage.getItem(key)
+        const raw = NON_MIRRORED_KEYS.has(key) ? null : localStorage.getItem(key)
         return raw !== null ? JSON.parse(raw) : DEFAULT_SETTINGS[key]
       } catch (e) {
         return DEFAULT_SETTINGS[key]
@@ -132,7 +141,7 @@ class StorageManager {
     } catch (error) {
       console.error('Error getting setting:', error)
       try {
-        const raw = localStorage.getItem(key)
+        const raw = NON_MIRRORED_KEYS.has(key) ? null : localStorage.getItem(key)
         return raw !== null ? JSON.parse(raw) : DEFAULT_SETTINGS[key]
       } catch (e) {
         return DEFAULT_SETTINGS[key]
@@ -185,11 +194,15 @@ class StorageManager {
    * @param {any} value - Value to store
    */
   async setSetting(key, value) {
-    // Always mirror to localStorage so we have a synchronous copy usable during unload
-    try {
-      localStorage.setItem(key, JSON.stringify(value))
-    } catch (e) {
-      // ignore localStorage errors
+    // Mirror to localStorage for synchronous access; without chrome.storage
+    // (dev mode) it is the only store. Secrets stay out of the mirror when
+    // chrome.storage is available.
+    if (!this.isAvailable() || !NON_MIRRORED_KEYS.has(key)) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value))
+      } catch (e) {
+        // ignore localStorage errors
+      }
     }
 
     if (!this.isAvailable()) {
@@ -209,9 +222,11 @@ class StorageManager {
    * @param {Object} settings - Settings object to store
    */
   async setSettings(settings) {
-    // Mirror to localStorage synchronously
+    // Mirror to localStorage synchronously (secrets only when chrome.storage
+    // is unavailable)
     try {
       Object.entries(settings).forEach(([key, value]) => {
+        if (this.isAvailable() && NON_MIRRORED_KEYS.has(key)) return
         localStorage.setItem(key, JSON.stringify(value))
       })
     } catch (e) {
@@ -235,16 +250,18 @@ class StorageManager {
    * @param {string} key - Storage key to remove
    */
   async removeSetting(key) {
-    if (!this.isAvailable()) {
+    try {
       localStorage.removeItem(key)
-      return
+    } catch (e) {
+      // ignore localStorage errors
     }
+
+    if (!this.isAvailable()) return
 
     try {
       await this.storage.remove(key)
     } catch (error) {
       console.error('Error removing setting:', error)
-      localStorage.removeItem(key)
     }
   }
 
@@ -252,20 +269,18 @@ class StorageManager {
    * Clear all settings
    */
   async clearAll() {
-    if (!this.isAvailable()) {
-      Object.keys(DEFAULT_SETTINGS).forEach(key => {
-        localStorage.removeItem(key)
-      })
-      return
+    try {
+      Object.keys(DEFAULT_SETTINGS).forEach(key => localStorage.removeItem(key))
+    } catch (e) {
+      // ignore localStorage errors
     }
+
+    if (!this.isAvailable()) return
 
     try {
       await this.storage.clear()
     } catch (error) {
       console.error('Error clearing storage:', error)
-      Object.keys(DEFAULT_SETTINGS).forEach(key => {
-        localStorage.removeItem(key)
-      })
     }
   }
 
@@ -491,6 +506,42 @@ class StorageManager {
     }
   }
 
+  async updateSavedCredential(entryId, { origin = '', domain = '', username = '', usernameEnc = null, passwordEnc = null, label = '' }) {
+    try {
+      const normalizedDomain = normalizeDomain(domain || origin)
+      const normalizedOrigin = normalizeOrigin(origin)
+      const trimmedUsername = String(username || '').trim()
+
+      if (!normalizedDomain || !trimmedUsername || !usernameEnc) {
+        return null
+      }
+
+      const currentCredentials = await this.getSavedCredentials()
+      const existing = currentCredentials.find(entry => entry.id === entryId)
+      if (!existing) return null
+
+      const nextCredential = {
+        ...existing,
+        origin: normalizedOrigin || existing.origin || '',
+        domain: normalizedDomain,
+        usernamePreview: maskUsername(trimmedUsername),
+        usernameEnc,
+        label: String(label || '').trim().slice(0, 40),
+        updatedAt: new Date().toISOString(),
+        ...(passwordEnc ? { passwordEnc } : {}),
+      }
+
+      await this.setSetting(
+        STORAGE_KEYS.SAVED_CREDENTIALS,
+        currentCredentials.map(entry => (entry.id === entryId ? nextCredential : entry))
+      )
+      return nextCredential
+    } catch (error) {
+      console.error('Error updating saved credential:', error)
+      return null
+    }
+  }
+
   async removeSavedCredential(entryId) {
     try {
       const currentCredentials = await this.getSetting(STORAGE_KEYS.SAVED_CREDENTIALS)
@@ -501,21 +552,11 @@ class StorageManager {
     }
   }
 
-  async updateSavedCredentialLabel(entryId, label = '') {
+  async clearSavedCredentials() {
     try {
-      const currentCredentials = await this.getSetting(STORAGE_KEYS.SAVED_CREDENTIALS)
-      const trimmedLabel = String(label || '').trim().slice(0, 40)
-      const now = new Date().toISOString()
-      const updatedCredentials = (Array.isArray(currentCredentials) ? currentCredentials : []).map(entry => (
-        entry.id === entryId
-          ? { ...entry, label: trimmedLabel, updatedAt: now }
-          : entry
-      ))
-      await this.setSetting(STORAGE_KEYS.SAVED_CREDENTIALS, updatedCredentials)
-      return updatedCredentials.find(entry => entry.id === entryId) || null
+      await this.setSetting(STORAGE_KEYS.SAVED_CREDENTIALS, [])
     } catch (error) {
-      console.error('Error updating saved credential label:', error)
-      return null
+      console.error('Error clearing saved credentials:', error)
     }
   }
 
@@ -565,6 +606,31 @@ class StorageManager {
       await this.setSetting(STORAGE_KEYS.CREDENTIAL_NEVER_SAVE_DOMAINS, nextDomains)
     } catch (error) {
       console.error('Error updating never-save domains:', error)
+    }
+  }
+
+  async getDismissedSuggestionDomains() {
+    try {
+      const domains = await this.getSetting(STORAGE_KEYS.DISMISSED_SUGGESTION_DOMAINS)
+      return Array.isArray(domains) ? domains : []
+    } catch (error) {
+      console.error('Error getting dismissed suggestion domains:', error)
+      return []
+    }
+  }
+
+  async removeDismissedSuggestionDomain(domain) {
+    try {
+      const normalizedDomain = normalizeDomain(domain)
+      if (!normalizedDomain) return
+
+      const currentDomains = await this.getDismissedSuggestionDomains()
+      await this.setSetting(
+        STORAGE_KEYS.DISMISSED_SUGGESTION_DOMAINS,
+        currentDomains.filter(entry => entry !== normalizedDomain)
+      )
+    } catch (error) {
+      console.error('Error removing dismissed suggestion domain:', error)
     }
   }
 }

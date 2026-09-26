@@ -120,7 +120,7 @@ describe('storageUtils saved credentials', () => {
     expect(await storageManager.isNeverSaveDomain('example.com')).toBe(false)
   })
 
-  test('updates saved credential labels', async () => {
+  test('updates saved credential fields including username and password', async () => {
     const cryptoModule = await import('../lib/crypto.js')
     const storageModule = await import('../storageUtils.js')
     const { storageManager } = storageModule
@@ -133,10 +133,65 @@ describe('storageUtils saved credentials', () => {
       passwordEnc: await cryptoModule.encryptText('Secret#12345'),
     })
 
-    const updated = await storageManager.updateSavedCredentialLabel(saved.id, 'Personal')
+    const updated = await storageManager.updateSavedCredential(saved.id, {
+      origin: 'https://example.com/account',
+      domain: 'example.com',
+      username: 'new@example.com',
+      usernameEnc: await cryptoModule.encryptText('new@example.com'),
+      passwordEnc: await cryptoModule.encryptText('NewSecret#67890'),
+      label: 'Personal',
+    })
+
     const credentials = await storageManager.getSavedCredentials()
 
+    expect(updated.id).toBe(saved.id)
     expect(updated.label).toBe('Personal')
-    expect(credentials[0].label).toBe('Personal')
+    expect(updated.usernamePreview).toContain('ne')
+    expect(updated.origin).toBe('https://example.com')
+    expect(await cryptoModule.decryptText(credentials[0].usernameEnc)).toBe('new@example.com')
+    expect(await cryptoModule.decryptText(credentials[0].passwordEnc)).toBe('NewSecret#67890')
+  })
+
+  test('keeps the existing password when no new password is provided', async () => {
+    const cryptoModule = await import('../lib/crypto.js')
+    const storageModule = await import('../storageUtils.js')
+    const { storageManager } = storageModule
+
+    const saved = await storageManager.saveCredential({
+      origin: 'https://example.com/login',
+      domain: 'example.com',
+      username: 'person@example.com',
+      usernameEnc: await cryptoModule.encryptText('person@example.com'),
+      passwordEnc: await cryptoModule.encryptText('Secret#12345'),
+    })
+
+    await storageManager.updateSavedCredential(saved.id, {
+      domain: 'example.com',
+      username: 'person@example.com',
+      usernameEnc: await cryptoModule.encryptText('person@example.com'),
+      label: 'Kept',
+    })
+
+    const [credential] = await storageManager.getSavedCredentials()
+
+    expect(await cryptoModule.decryptText(credential.passwordEnc)).toBe('Secret#12345')
+  })
+
+  test('clears all saved credentials', async () => {
+    const cryptoModule = await import('../lib/crypto.js')
+    const storageModule = await import('../storageUtils.js')
+    const { storageManager } = storageModule
+
+    await storageManager.saveCredential({
+      origin: 'https://example.com/login',
+      domain: 'example.com',
+      username: 'person@example.com',
+      usernameEnc: await cryptoModule.encryptText('person@example.com'),
+      passwordEnc: await cryptoModule.encryptText('Secret#12345'),
+    })
+
+    await storageManager.clearSavedCredentials()
+
+    expect(await storageManager.getSavedCredentials()).toEqual([])
   })
 })

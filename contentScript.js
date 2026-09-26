@@ -6,7 +6,7 @@ const DEFAULT_PASSWORD_OPTIONS = {
   includeUppercase: true,
   includeLowercase: true,
   includeNumbers: true,
-  includeSymbols: true,
+  includeSymbols: false,
   symbolSet: 'basic',
   customSymbols: '',
   excludeAmbiguous: false,
@@ -20,18 +20,45 @@ const STORAGE_KEYS = {
   CREDENTIAL_NEVER_SAVE_DOMAINS: 'credentialNeverSaveDomains',
   WRAPPING_JWK: 'crypto_wrapping_jwk_v1',
   PENDING_CREDENTIAL_PROMPT: 'pendingCredentialPrompt',
-  SUGGESTION_ENABLED: 'suggestionEnabled'
+  SUGGESTION_ENABLED: 'suggestionEnabled',
+  LENGTH: 'length',
+  INCLUDE_UPPERCASE: 'includeUppercase',
+  INCLUDE_LOWERCASE: 'includeLowercase',
+  INCLUDE_NUMBERS: 'includeNumbers',
+  INCLUDE_SYMBOLS: 'includeSymbols',
+  SYMBOL_SET: 'symbolSet',
+  CUSTOM_SYMBOLS: 'customSymbols',
+  EXCLUDE_AMBIGUOUS: 'excludeAmbiguous'
 }
 const SYMBOL_SETS = {
-  basic: '!@#$%^&*',
+  basic: '!@#$%&*+-=?',
   extended: '!@#$%^&*()_+-=[]{}|;:,.<>?',
-  safe: '!@#$%*+-=?'
+  safe: '!@#$%&*+-=?.',
+  brackets: '()[]{}',
+  punctuation: '!@#$%&*+-=?:;,.',
+  math: '+-=*%^',
+  dbsafe: '_.-~*+',
+  custom: ''
 }
+const AMBIGUOUS_CHARS = 'il1Lo0O'
+const GENERATOR_SETTING_KEYS = [
+  STORAGE_KEYS.LENGTH,
+  STORAGE_KEYS.INCLUDE_UPPERCASE,
+  STORAGE_KEYS.INCLUDE_LOWERCASE,
+  STORAGE_KEYS.INCLUDE_NUMBERS,
+  STORAGE_KEYS.INCLUDE_SYMBOLS,
+  STORAGE_KEYS.SYMBOL_SET,
+  STORAGE_KEYS.CUSTOM_SYMBOLS,
+  STORAGE_KEYS.EXCLUDE_AMBIGUOUS
+]
 const UI = {
   suggestionRoot: null,
   suggestionCard: null,
   passwordText: null,
   suggestionSubtitle: null,
+  cardHeader: null,
+  strengthBadge: null,
+  credentialSelect: null,
   suggestionActions: null,
   triggerRoot: null,
   triggerButton: null,
@@ -59,10 +86,15 @@ let repositionFrame = null
 let autoShowTimer = null
 let observer = null
 let activeCredential = null
+let activeCredentialList = []
+let activePasswordOptions = null
+let activeStrengthText = ''
+let activeStrengthTone = 'neutral'
 let triggerField = null
 let pendingSavePayload = null
 let initialized = false
 let generatedPasswordField = null
+let cachedPasswordOptions = null
 const dismissedFields = new WeakSet()
 let isCurrentDomainDismissed = false
 const DISMISSED_DOMAINS_KEY = 'dismissedSuggestionDomains'
@@ -106,6 +138,36 @@ async function getStorageValue(key, fallback) {
   } catch (error) {
     return fallback
   }
+}
+function normalizeLength(value) {
+  const length = Number(value)
+  return Number.isInteger(length) && length >= 4 && length <= 128
+    ? length
+    : DEFAULT_PASSWORD_OPTIONS.length
+}
+async function getPasswordOptions() {
+  if (cachedPasswordOptions) return cachedPasswordOptions
+  const [length, includeUppercase, includeLowercase, includeNumbers, includeSymbols, symbolSet, customSymbols, excludeAmbiguous] = await Promise.all([
+    getStorageValue(STORAGE_KEYS.LENGTH, DEFAULT_PASSWORD_OPTIONS.length),
+    getStorageValue(STORAGE_KEYS.INCLUDE_UPPERCASE, DEFAULT_PASSWORD_OPTIONS.includeUppercase),
+    getStorageValue(STORAGE_KEYS.INCLUDE_LOWERCASE, DEFAULT_PASSWORD_OPTIONS.includeLowercase),
+    getStorageValue(STORAGE_KEYS.INCLUDE_NUMBERS, DEFAULT_PASSWORD_OPTIONS.includeNumbers),
+    getStorageValue(STORAGE_KEYS.INCLUDE_SYMBOLS, DEFAULT_PASSWORD_OPTIONS.includeSymbols),
+    getStorageValue(STORAGE_KEYS.SYMBOL_SET, DEFAULT_PASSWORD_OPTIONS.symbolSet),
+    getStorageValue(STORAGE_KEYS.CUSTOM_SYMBOLS, DEFAULT_PASSWORD_OPTIONS.customSymbols),
+    getStorageValue(STORAGE_KEYS.EXCLUDE_AMBIGUOUS, DEFAULT_PASSWORD_OPTIONS.excludeAmbiguous)
+  ])
+  cachedPasswordOptions = {
+    length: normalizeLength(length),
+    includeUppercase: includeUppercase !== false,
+    includeLowercase: includeLowercase !== false,
+    includeNumbers: includeNumbers !== false,
+    includeSymbols: includeSymbols === true,
+    symbolSet: typeof symbolSet === 'string' && SYMBOL_SETS[symbolSet] !== undefined ? symbolSet : 'basic',
+    customSymbols: typeof customSymbols === 'string' ? customSymbols : '',
+    excludeAmbiguous: excludeAmbiguous === true
+  }
+  return cachedPasswordOptions
 }
 async function setStorageValue(key, value) {
   try {
@@ -202,6 +264,19 @@ function applyCurrentThemeToUi() {
   }
   if (UI.suggestionSubtitle) {
     UI.suggestionSubtitle.style.color = palette.mutedText
+  }
+  if (UI.strengthBadge) {
+    UI.strengthBadge.style.background = palette.neutralBackground
+    UI.strengthBadge.style.borderColor = palette.neutralBorder
+    UI.strengthBadge.style.color = palette.tertiaryColor
+  }
+  if (UI.credentialSelect) {
+    UI.credentialSelect.style.background = palette.neutralBackground
+    UI.credentialSelect.style.borderColor = palette.neutralBorder
+    UI.credentialSelect.style.color = palette.neutralColor
+  }
+  if (activeStrengthText) {
+    setStrengthBadge(activeStrengthText, activeStrengthTone)
   }
   if (UI.feedback) {
     UI.feedback.style.color = palette.mutedText
@@ -406,22 +481,33 @@ function getSymbolChars(symbolSet, customSymbols) {
   }
   return SYMBOL_SETS[symbolSet] || SYMBOL_SETS.basic
 }
+function removeAmbiguousChars(charset) {
+  return charset.split('').filter(char => !AMBIGUOUS_CHARS.includes(char)).join('')
+}
+function getRequiredSets(options) {
+  const sets = []
+  if (options.includeUppercase) sets.push('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+  if (options.includeLowercase) sets.push('abcdefghijklmnopqrstuvwxyz')
+  if (options.includeNumbers) sets.push('0123456789')
+  if (options.includeSymbols) sets.push(getSymbolChars(options.symbolSet, options.customSymbols))
+  return options.excludeAmbiguous ? sets.map(removeAmbiguousChars).filter(Boolean) : sets
+}
 function buildCharset(options) {
   let charset = ''
   if (options.includeUppercase) charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
   if (options.includeLowercase) charset += 'abcdefghijklmnopqrstuvwxyz'
   if (options.includeNumbers) charset += '0123456789'
   if (options.includeSymbols) charset += getSymbolChars(options.symbolSet, options.customSymbols)
-  if (!charset) charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  if (options.excludeAmbiguous) charset = removeAmbiguousChars(charset)
+  if (!charset) {
+    const fallback = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    charset = options.excludeAmbiguous ? removeAmbiguousChars(fallback) : fallback
+  }
   return charset
 }
 function generatePassword(options = DEFAULT_PASSWORD_OPTIONS) {
   const charset = buildCharset(options)
-  const requiredSets = []
-  if (options.includeUppercase) requiredSets.push('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
-  if (options.includeLowercase) requiredSets.push('abcdefghijklmnopqrstuvwxyz')
-  if (options.includeNumbers) requiredSets.push('0123456789')
-  if (options.includeSymbols) requiredSets.push(getSymbolChars(options.symbolSet, options.customSymbols))
+  const requiredSets = getRequiredSets(options)
   const passwordChars = []
   requiredSets.forEach(set => {
     passwordChars.push(set[getSecureRandomInt(set.length)])
@@ -640,6 +726,46 @@ function setSuggestionSubtitle(text = '') {
   UI.suggestionSubtitle.textContent = text
   UI.suggestionSubtitle.style.display = text ? 'block' : 'none'
 }
+function setStrengthBadge(text = '', tone = 'neutral') {
+  activeStrengthText = text
+  activeStrengthTone = tone
+  if (!UI.strengthBadge) return
+  if (!text) {
+    UI.strengthBadge.style.display = 'none'
+    return
+  }
+  const palette = getThemePalette(activeThemeMode)
+  UI.strengthBadge.textContent = text
+  UI.strengthBadge.style.display = 'inline-flex'
+  if (tone === 'strong') {
+    UI.strengthBadge.style.background = palette.primaryBackground
+    UI.strengthBadge.style.borderColor = palette.primaryBorder
+    UI.strengthBadge.style.color = palette.primaryColor
+  } else {
+    UI.strengthBadge.style.background = palette.neutralBackground
+    UI.strengthBadge.style.borderColor = palette.neutralBorder
+    UI.strengthBadge.style.color = palette.tertiaryColor
+  }
+}
+function getPasswordStrengthInfo(password = '', options = null) {
+  if (!password || !options) return { text: '', tone: 'neutral' }
+  const charsetSize = Math.max(1, buildCharset(options).length)
+  const entropy = password.length * Math.log2(charsetSize)
+  const label = entropy >= 80 ? 'Strong' : entropy >= 60 ? 'Good' : entropy >= 40 ? 'Fair' : 'Weak'
+  return { text: `${label} · ${password.length} chars`, tone: entropy >= 80 ? 'strong' : 'neutral' }
+}
+function applyPasswordStrengthBadge(password, options) {
+  const info = getPasswordStrengthInfo(password, options)
+  setStrengthBadge(info.text, info.tone)
+}
+function handleCredentialSelectChange(event) {
+  const index = Number(event.target.value)
+  const credential = activeCredentialList[index]
+  if (!credential) return
+  activeCredential = credential
+  setSuggestionPasswordText(credential.usernamePreview || 'Saved account', false)
+  setFeedback('', 'neutral')
+}
 function getPasswordCharColor(char, index) {
   if (/\d/.test(char)) {
     return index % 2 === 0 ? '#38bdf8' : '#22d3ee'
@@ -841,15 +967,17 @@ function ensureUi() {
   triggerGlyph.style.pointerEvents = 'none'
   triggerButton.appendChild(triggerGlyph)
   triggerButton.addEventListener('mouseenter', () => {
-    triggerButton.style.background = 'rgba(236, 253, 245, 0.98)'
-    triggerButton.style.borderColor = 'rgba(34, 197, 94, 0.28)'
-    triggerButton.style.color = '#166534'
+    const palette = getThemePalette(activeThemeMode)
+    triggerButton.style.background = palette.triggerHoverBackground
+    triggerButton.style.borderColor = palette.triggerHoverBorder
+    triggerButton.style.color = palette.triggerHoverColor
     triggerButton.style.boxShadow = '0 18px 36px -22px rgba(40, 48, 67, 0.18), 0 4px 12px -8px rgba(40, 48, 67, 0.08)'
   })
   triggerButton.addEventListener('mouseleave', () => {
-    triggerButton.style.background = 'rgba(255, 255, 255, 0.98)'
-    triggerButton.style.borderColor = 'rgba(53, 66, 87, 0.18)'
-    triggerButton.style.color = '#6b7280'
+    const palette = getThemePalette(activeThemeMode)
+    triggerButton.style.background = palette.triggerBackground
+    triggerButton.style.borderColor = palette.triggerBorder
+    triggerButton.style.color = palette.triggerColor
     triggerButton.style.boxShadow = '0 12px 28px -18px rgba(40, 48, 67, 0.14), 0 2px 6px -4px rgba(40, 48, 67, 0.08)'
   })
   triggerButton.addEventListener('pointerdown', (event) => {
@@ -883,6 +1011,38 @@ function ensureUi() {
   suggestionSubtitle.style.fontSize = '11px'
   suggestionSubtitle.style.lineHeight = '1.45'
   suggestionSubtitle.style.color = '#6b7280'
+  const cardHeader = document.createElement('div')
+  cardHeader.style.display = 'flex'
+  cardHeader.style.alignItems = 'center'
+  cardHeader.style.justifyContent = 'space-between'
+  cardHeader.style.gap = '8px'
+  const strengthBadge = document.createElement('div')
+  strengthBadge.style.display = 'none'
+  strengthBadge.style.alignItems = 'center'
+  strengthBadge.style.padding = '2px 7px'
+  strengthBadge.style.borderRadius = '2px'
+  strengthBadge.style.border = '1px solid rgba(53, 66, 87, 0.12)'
+  strengthBadge.style.background = 'rgba(255, 255, 255, 0.82)'
+  strengthBadge.style.color = '#6b7280'
+  strengthBadge.style.fontSize = '10px'
+  strengthBadge.style.fontWeight = '600'
+  strengthBadge.style.whiteSpace = 'nowrap'
+  cardHeader.append(title, strengthBadge)
+  const credentialSelect = document.createElement('select')
+  credentialSelect.style.display = 'none'
+  credentialSelect.style.marginTop = '10px'
+  credentialSelect.style.width = '100%'
+  credentialSelect.style.height = '32px'
+  credentialSelect.style.padding = '0 8px'
+  credentialSelect.style.borderRadius = '2px'
+  credentialSelect.style.border = '1px solid rgba(53, 66, 87, 0.12)'
+  credentialSelect.style.background = 'rgba(255, 255, 255, 0.82)'
+  credentialSelect.style.color = '#1f2937'
+  credentialSelect.style.fontSize = '12px'
+  credentialSelect.style.fontFamily = sansFont
+  credentialSelect.style.boxSizing = 'border-box'
+  credentialSelect.setAttribute('aria-label', 'Choose saved account')
+  credentialSelect.addEventListener('change', handleCredentialSelectChange)
   const passwordText = document.createElement('div')
   passwordText.style.marginTop = '10px'
   passwordText.style.padding = '12px 13px'
@@ -964,7 +1124,7 @@ function ensureUi() {
   attachTooltip(refreshButton, 'Refresh password')
   attachTooltip(dismissButton, 'Dismiss suggestion')
   suggestionActions.append(fillButton, copyButton, refreshButton, dismissButton)
-  suggestionCard.append(title, suggestionSubtitle, passwordText, suggestionActions, feedback)
+  suggestionCard.append(cardHeader, suggestionSubtitle, credentialSelect, passwordText, suggestionActions, feedback)
   suggestionRoot.appendChild(suggestionCard)
   const saveRoot = document.createElement('div')
   saveRoot.id = 'securepass-save-root'
@@ -1047,6 +1207,9 @@ function ensureUi() {
   UI.suggestionCard = suggestionCard
   UI.passwordText = passwordText
   UI.suggestionSubtitle = suggestionSubtitle
+  UI.cardHeader = cardHeader
+  UI.strengthBadge = strengthBadge
+  UI.credentialSelect = credentialSelect
   UI.suggestionActions = suggestionActions
   UI.triggerRoot = triggerRoot
   UI.triggerButton = triggerButton
@@ -1150,14 +1313,28 @@ async function showCredentialSuggestion(field, credentials) {
   if (!credentials.length) return false
   activeField = field
   activeCredential = credentials[0]
+  activeCredentialList = credentials
   activePassword = ''
+  activePasswordOptions = null
   generatedPasswordField = null
+  setStrengthBadge('')
   setSuggestionPasswordText(activeCredential.usernamePreview || 'Saved account', false)
   setSuggestionSubtitle(credentials.length > 1
-    ? `Saved login for ${activeCredential.domain}. Use the popup vault to choose another account.`
+    ? `Saved logins for ${activeCredential.domain}. Choose an account above.`
     : `Saved login for ${activeCredential.domain}. Device verification is required before fill.`)
+  if (UI.credentialSelect) {
+    while (UI.credentialSelect.firstChild) UI.credentialSelect.removeChild(UI.credentialSelect.firstChild)
+    credentials.forEach((credential, index) => {
+      const option = document.createElement('option')
+      option.value = String(index)
+      option.textContent = credential.usernamePreview || credential.domain || `Account ${index + 1}`
+      UI.credentialSelect.appendChild(option)
+    })
+    UI.credentialSelect.value = '0'
+    UI.credentialSelect.style.display = credentials.length > 1 ? 'block' : 'none'
+  }
   UI.fillButton.textContent = 'Fill login'
-  UI.copyButton.textContent = 'Copy user'
+  UI.copyButton.textContent = 'Copy username'
   if (UI.suggestionActions) {
     UI.suggestionActions.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr)) auto'
   }
@@ -1170,7 +1347,7 @@ async function showCredentialSuggestion(field, credentials) {
   scheduleReposition()
   return true
 }
-function showGeneratedSuggestion(field) {
+async function showGeneratedSuggestion(field) {
   ensureUi()
   if (!isEligibleSuggestionField(field)) {
     hideSuggestion()
@@ -1178,13 +1355,19 @@ function showGeneratedSuggestion(field) {
   }
   activeField = field
   activeCredential = null
+  activeCredentialList = []
   const shouldReusePassword = generatedPasswordField === field && activePassword
   if (!shouldReusePassword) {
-    activePassword = generatePassword(DEFAULT_PASSWORD_OPTIONS)
+    const options = await getPasswordOptions()
+    if (activeField !== field || activeCredential) return false
+    activePassword = generatePassword(options)
+    activePasswordOptions = options
     generatedPasswordField = field
   }
+  if (UI.credentialSelect) UI.credentialSelect.style.display = 'none'
   setSuggestionPasswordText(activePassword, true)
   setSuggestionSubtitle('')
+  applyPasswordStrengthBadge(activePassword, activePasswordOptions)
   UI.fillButton.textContent = 'Fill'
   UI.copyButton.textContent = 'Copy'
   if (UI.suggestionActions) {
@@ -1219,7 +1402,7 @@ async function showSuggestionForFirstEligibleField() {
       return field
     }
   }
-  showGeneratedSuggestion(field)
+  await showGeneratedSuggestion(field)
   return field
 }
 function scheduleAutoShow(delay = 0) {
@@ -1245,13 +1428,19 @@ function hideSuggestion() {
   }
   activeField = null
   activeCredential = null
+  activeCredentialList = []
 }
-function handleSuggestionRefreshClick(event) {
+async function handleSuggestionRefreshClick(event) {
   event.preventDefault()
   if (!activeField || activeCredential) return
-  activePassword = generatePassword(DEFAULT_PASSWORD_OPTIONS)
-  generatedPasswordField = activeField
+  const field = activeField
+  const options = await getPasswordOptions()
+  if (activeField !== field || activeCredential) return
+  activePassword = generatePassword(options)
+  activePasswordOptions = options
+  generatedPasswordField = field
   setSuggestionPasswordText(activePassword, true)
+  applyPasswordStrengthBadge(activePassword, activePasswordOptions)
   setFeedback('Password refreshed', 'success')
   scheduleReposition()
 }
@@ -1639,6 +1828,12 @@ if (extensionChrome?.storage?.onChanged?.addListener) {
       activeThemeMode = getPreferredTheme(nextTheme)
       applyCurrentThemeToUi()
     }
+    if (GENERATOR_SETTING_KEYS.some(key => changes[key])) {
+      cachedPasswordOptions = null
+    }
+    if (changes[DISMISSED_DOMAINS_KEY]) {
+      loadDismissalState()
+    }
   })
 }
 if (typeof window !== 'undefined' && window.matchMedia) {
@@ -1659,12 +1854,16 @@ if (typeof window !== 'undefined' && window.matchMedia) {
 if (extensionChrome?.runtime?.onMessage) {
   extensionChrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'fillPassword') {
-      const password = request.password || activePassword || generatePassword(DEFAULT_PASSWORD_OPTIONS)
-      const result = fillPasswordFields(password, activeField)
-      if (result.success) {
-        addPasswordHistory('autofill', password)
+      const password = request.password || activePassword
+      if (password) {
+        sendResponse(fillPasswordFields(password, activeField))
+        return true
       }
-      sendResponse(result)
+      // History for popup-triggered autofill is recorded by the popup, which
+      // can include the encrypted password and password type.
+      getPasswordOptions().then((options) => {
+        sendResponse(fillPasswordFields(generatePassword(options), activeField))
+      })
       return true
     }
     if (request.action === 'fillSavedCredential') {
@@ -1693,10 +1892,32 @@ if (extensionChrome?.runtime?.onMessage) {
     return false
   })
 }
+function handleKeyDown(event) {
+  if (event.key !== 'Escape') return
+
+  let handled = false
+
+  if (UI.saveRoot?.style.display === 'block') {
+    hideSavePrompt()
+    handled = true
+  }
+
+  if (UI.suggestionRoot?.style.display === 'block') {
+    hideSuggestion()
+    hideTrigger()
+    handled = true
+  }
+
+  if (handled) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+}
 document.addEventListener('focusin', handleFocusIn, true)
 document.addEventListener('pointerdown', handlePointerDown, true)
 document.addEventListener('input', handleInput, true)
 document.addEventListener('submit', handleFormSubmit, true)
+document.addEventListener('keydown', handleKeyDown, true)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     scheduleAutoShow(0)
@@ -1712,6 +1933,7 @@ initializeAutoSuggestion()
 console.log('SecurePass Generator: In-page password suggestions and vault prompts enabled')
 globalThis.__SECUREPASS_CONTENT_SCRIPT__ = {
   DEFAULT_PASSWORD_OPTIONS,
+  buildCharset,
   decryptText,
   encryptText,
   fillPasswordFields,
@@ -1721,6 +1943,8 @@ globalThis.__SECUREPASS_CONTENT_SCRIPT__ = {
   getCredentialPayloadFromForm,
   getEligibleSuggestionFields,
   getPreferredSuggestionField,
+  getPasswordOptions,
+  getPasswordStrengthInfo,
   getStorageValue,
   getSavedCredentials,
   getSameFormTargets,
@@ -1733,5 +1957,6 @@ globalThis.__SECUREPASS_CONTENT_SCRIPT__ = {
   restorePendingSavePrompt,
   saveCredentialPayload,
   shouldPromptForCredential,
+  showCredentialSuggestion,
   showSuggestionForFirstEligibleField
 }

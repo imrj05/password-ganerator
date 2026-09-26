@@ -16,6 +16,14 @@ try {
   root.setAttribute('data-theme', mode)
 } catch(e) {}
 
+// Keep a port open for the background worker so it can clear history when the
+// popup closes (see background.js)
+try {
+  window.__securePassPopupPort = chrome.runtime.connect({ name: 'popup' })
+} catch (e) {
+  // chrome.runtime is unavailable outside the extension
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
