@@ -190,6 +190,11 @@ const VaultPanel = ({
   const handleRevealPassword = async (entry) => {
     if (!entry?.passwordEnc) return
 
+    if (revealed[entry.id]) {
+      maskCredential(entry.id)
+      return
+    }
+
     const ok = await ensureVerified()
     if (!ok) {
       onToast('Verification failed', 'error')
@@ -434,11 +439,11 @@ const VaultPanel = ({
                   <div className="flex items-center justify-end gap-2">
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="secondary" size="icon" onClick={() => handleRevealPassword(entry)} aria-label="Reveal password" aria-pressed={Boolean(revealed[entry.id])}>
-                          <Eye size={14} />
+                        <Button variant="secondary" size="icon" onClick={() => handleRevealPassword(entry)} aria-label={revealed[entry.id] ? 'Hide password' : 'Reveal password'} aria-pressed={Boolean(revealed[entry.id])}>
+                          {revealed[entry.id] ? <EyeOff size={14} /> : <Eye size={14} />}
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>Reveal password</TooltipContent>
+                      <TooltipContent>{revealed[entry.id] ? 'Hide password' : 'Reveal password'}</TooltipContent>
                     </Tooltip>
 
                     <Tooltip>

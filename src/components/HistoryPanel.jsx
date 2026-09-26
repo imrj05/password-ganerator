@@ -4,7 +4,7 @@ import { Card } from './ui/card'
 import { Badge } from './ui/badge'
 import { Input } from './ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-import { History, Download, X, Copy, Send, Clock, Globe, Eye, Check, Trash2 } from 'lucide-react'
+import { History, Download, X, Copy, Send, Clock, Globe, Eye, EyeOff, Check, Trash2 } from 'lucide-react'
 import { filterHistoryEntries, getHistoryDayLabel, getHistoryPasswordTypes, getPasswordTypeLabel, sortHistoryEntries } from '../historyFilters'
 import { decryptFromHistory } from '@/lib/crypto'
 import { enrollPlatformCredential, verifyPlatformCredential, isAuthWindowValid } from '@/lib/webauthn'
@@ -71,6 +71,10 @@ const HistoryPanel = ({
   const handleReveal = async (entry) => {
     try {
       if (!entry?.passwordEnc) return
+      if (revealed[entry.id]) {
+        maskEntry(entry.id)
+        return
+      }
       const ok = await ensureVerified()
       if (!ok) { onToast('Verification failed', 'error'); return }
       const plain = await decryptFromHistory(entry.passwordEnc)
@@ -304,11 +308,11 @@ const HistoryPanel = ({
                       <div className="flex items-center gap-1.5">
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" onClick={() => handleReveal(entry)} aria-label="Reveal" aria-pressed={Boolean(revealed[entry.id])}>
-                              <Eye size={14} />
+                            <Button variant="ghost" size="icon" onClick={() => handleReveal(entry)} aria-label={revealed[entry.id] ? 'Hide' : 'Reveal'} aria-pressed={Boolean(revealed[entry.id])}>
+                              {revealed[entry.id] ? <EyeOff size={14} /> : <Eye size={14} />}
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>Reveal</TooltipContent>
+                          <TooltipContent>{revealed[entry.id] ? 'Hide' : 'Reveal'}</TooltipContent>
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
