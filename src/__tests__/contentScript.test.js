@@ -439,4 +439,34 @@ describe('contentScript helpers', () => {
     const select = document.querySelector('#securepass-suggestion-root select')
     expect(select.style.display).toBe('none')
   })
+
+  test('uses readable password colors in both themes', () => {
+    const api = globalThis.__SECUREPASS_CONTENT_SCRIPT__
+
+    expect(api.getPasswordCharColor('A', 0, 'light')).toBe('#111827')
+    expect(api.getPasswordCharColor('a', 0, 'light')).toBe('#374151')
+    expect(api.getPasswordCharColor('A', 0, 'dark')).toBe('#f4f4f5')
+    expect(api.getPasswordCharColor('a', 0, 'dark')).toBe('#d4d4d8')
+  })
+
+  test('renders labeled action buttons and an svg trigger icon', async () => {
+    document.body.innerHTML = `
+      <form>
+        <input id="label-password" type="password" />
+      </form>
+    `
+    const field = document.getElementById('label-password')
+    defineVisibleClientRects(field)
+
+    const api = globalThis.__SECUREPASS_CONTENT_SCRIPT__
+    await api.showSuggestionForFirstEligibleField()
+
+    const buttonLabels = Array.from(document.querySelectorAll('#securepass-suggestion-root button'))
+      .map(button => button.textContent)
+    expect(buttonLabels).toContain('Fill')
+    expect(buttonLabels).toContain('Copy')
+
+    expect(document.querySelector('#securepass-trigger-root svg')).toBeTruthy()
+    expect(document.querySelector('#securepass-trigger-root img')).toBeNull()
+  })
 })
