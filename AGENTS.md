@@ -1,8 +1,8 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `src/` hosts popup logic; `App.jsx` orchestrates views, `components/` holds reusable UI, and hooks/utilities live in `hooks/`, `lib/`, and `storageUtils.js` for state or Chrome APIs.
-- Password engines sit in `src/securePasswordGenerator.js` and `src/memorablePasswordGenerator.js`; Chrome messaging is split between `src/contentScript.js` and the root `contentScript.js`.
+- `src/` hosts popup logic; `PopupApp.jsx` orchestrates views, `components/` holds reusable UI, and utilities live in `lib/` and `storageUtils.js` for state or Chrome APIs.
+- Password engines sit in `src/securePasswordGenerator.js` and `src/memorablePasswordGenerator.js`; in-page messaging lives in the root `contentScript.js` and the MV3 service worker is `background.js`.
 - Tests mirror features in `src/__tests__/`, while build artifacts compile to `dist/`, static assets live under `icons/`, and helper scripts reside in `scripts/`.
 
 ## Build, Test, and Development Commands

@@ -8,7 +8,7 @@ A modern Chrome extension for generating strong, memorable, and numeric password
 - Cryptographically secure generation powered by `crypto.getRandomValues()`
 - Rejection sampling to avoid modulo bias and preserve uniform character distribution
 - Entropy-driven strength scoring with guidance on crack time
-- No network calls, analytics, or password persistence beyond local component state
+- No network calls or analytics; passwords are only written to local storage when history or saved logins are enabled
 
 ### Generators
 - **Random** passwords with length 4-50, configurable character classes, and curated symbol sets (Basic, Extended, Safe, Brackets, Punctuation, Math, or custom)
@@ -90,16 +90,15 @@ Vitest specs live beside the implementation in `src/__tests__/`. When adding fea
 ```
 password-ganerator/
 ├── src/
-│   ├── App.jsx                       # Popup entry point orchestrating views
+│   ├── PopupApp.jsx                  # Popup entry point orchestrating views
 │   ├── popup.jsx                     # Popup bootstrap used by Vite
 │   ├── components/                   # Shared UI primitives (Tailwind helpers, Radix bindings)
-│   ├── hooks/                        # Custom React hooks
 │   ├── lib/                          # Chrome + utility helpers
 │   ├── securePasswordGenerator.js    # Cryptographically secure engine
 │   ├── memorablePasswordGenerator.js # Passphrase generator
 │   ├── storageUtils.js               # Chrome storage abstraction
-│   ├── contentScript.js              # Messaging bridge from popup to page
 │   └── __tests__/                    # Vitest suites mirroring features
+├── background.js                    # MV3 service worker (clears history on popup close)
 ├── contentScript.js                 # Root-level content script for MV3 registration
 ├── popup.html                       # Manifest V3 popup shell
 ├── icons/                           # Extension icons
@@ -116,13 +115,15 @@ password-ganerator/
 - Keep policy definitions in `src/passwordPolicies.js` so requirement checks stay testable and local-only.
 - Keep keyboard shortcut mapping in `src/keyboardShortcuts.js` so popup behavior is easy to test.
 - `MemorablePasswordGenerator#getVocabularyStats()` exposes dictionary size for tests and future UI metadata.
-- Chrome messaging is split between the root `contentScript.js` and the popup logic in `src/contentScript.js`.
+- In-page suggestions, autofill, and credential saving live in the root `contentScript.js`, which is bundled as a standalone Vite entry.
 - Styling prefers Tailwind class composers from `src/components/ui/`; stick with single quotes and 2-space indentation.
 
 ## Privacy & Security
 
 - No analytics, telemetry, or remote calls – everything runs locally in the browser context
-- User settings (theme, symbol selections, toggles) are the only items stored via Chrome Storage and can be cleared at any time
+- User settings (theme, symbol selections, toggles) are stored via Chrome Storage and can be cleared at any time
+- Password history and saved logins are stored locally only when enabled, and can be disabled or cleared from the popup
+- History and vault entries are encrypted with AES-GCM using a locally generated key; because that key lives in the same extension storage, this protects against casual inspection of stored data, not against an attacker who can read your browser profile or run code with your permissions
 - Clipboard writes happen only when explicitly triggered through the copy button
 - Password templates are local presets only; applying one does not contact any remote service
 - Password policy checks run locally against the generated value and do not store or transmit passwords
